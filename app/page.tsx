@@ -45,6 +45,18 @@ function highlight(text: string, query: string) {
   return parts.map((part, i) => part.toLowerCase() === query.toLowerCase() ? <mark key={i}>{part}</mark> : part);
 }
 
+function buildUsagePlan(input: string) {
+  const q = input.toLowerCase();
+  const research = /nghiên cứu|bài báo|luận văn|số liệu|thống kê|citation|trích dẫn/.test(q);
+  const coding = /code|bug|lỗi|repo|function|api|script/.test(q);
+  const finance = /tài chính|đầu tư|cổ phiếu|doanh thu|lợi nhuận/.test(q);
+  const legal = /pháp lý|luật|hợp đồng|điều khoản/.test(q);
+  if (research) return { profile: "Research", risk: "Cao", priority: "Độ chính xác > sáng tạo", tool: /số liệu|thống kê|phân tích/.test(q) ? "Python/R trước · LLM sau" : "Search có nguồn · LLM", verification: "Kiểm chứng cao", source: "Mọi factual claim cần nguồn", inference: "Phải gắn nhãn suy luận", output: "Kết quả / Diễn giải / Giới hạn" };
+  if (coding) return { profile: "Coding", risk: "Trung bình", priority: "Đúng và kiểm thử được", tool: "Repo tools + tests · LLM", verification: "Test thay cho phỏng đoán", source: "Code và log là nguồn chính", inference: "Nêu giả định kỹ thuật", output: "Patch tối thiểu + kết quả test" };
+  if (finance || legal) return { profile: finance ? "Finance" : "Legal", risk: "Cao", priority: "Nguồn và tính cập nhật", tool: "Search chính thống + tính toán", verification: "Kiểm chứng cao", source: "Không claim thiếu nguồn", inference: "Tách fact khỏi nhận định", output: "Kết luận / Căn cứ / Rủi ro" };
+  return { profile: "General Work", risk: "Thấp", priority: "Phù hợp mục tiêu", tool: "LLM cân bằng chi phí", verification: "Kiểm tra tiêu chuẩn", source: "Yêu cầu nguồn khi có factual claim", inference: "Nêu rõ khi suy luận", output: "Ngắn gọn, đúng định dạng" };
+}
+
 export default function Home() {
   const [entries, setEntries] = useState<Entry[]>(initialEntries);
   const [draft, setDraft] = useState("");
@@ -78,6 +90,7 @@ export default function Home() {
     if (ambiguous && !clarifiedScope) return { needed: true, reason: "Chưa xác định chính xác phạm vi cần xử lý." };
     return { needed: false, summary: clarifiedScope || (q.includes("audit") ? "Kiểm tra dự án và báo cáo vấn đề" : "Thực hiện yêu cầu theo nội dung đã nhập") };
   }, [draft, clarifiedScope]);
+  const usagePlan = useMemo(() => buildUsagePlan(draft), [draft]);
 
   useEffect(() => {
     const savedProvider = sessionStorage.getItem("minimum-provider") || "";
@@ -107,7 +120,8 @@ export default function Home() {
     const userEntry: Entry = { id: `user-${Date.now()}`, kind: "message", role: "user", text, time: "Vừa xong" };
     setEntries(prev => [...prev, userEntry]); setDraft(""); setSending(true);
     setTimeout(() => timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: "smooth" }), 30);
-    fetch("/api/providers/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider, apiKey, model, prompt: clarifiedScope ? `${text}\n\nPhạm vi đã làm rõ: ${clarifiedScope}` : text }) })
+    const policy = `USAGE PROFILE: ${usagePlan.profile}\nPRIORITY: ${usagePlan.priority}\nTOOL STRATEGY: ${usagePlan.tool}\nVERIFICATION: ${usagePlan.verification}\nSOURCE POLICY: ${usagePlan.source}\nINFERENCE POLICY: ${usagePlan.inference}\nOUTPUT CONTRACT: ${usagePlan.output}`;
+    fetch("/api/providers/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider, apiKey, model, prompt: `${policy}\n\nUSER GOAL:\n${text}${clarifiedScope ? `\n\nPhạm vi đã làm rõ: ${clarifiedScope}` : ""}` }) })
       .then(async response => { const data = await response.json(); if (!response.ok) throw new Error(data.error || "Không thể xử lý yêu cầu."); return data; })
       .then(data => setEntries(prev => [...prev, { id: `ai-${Date.now()}`, kind: "message", role: "ai", text: data.text, time: "Vừa xong" }]))
       .catch(error => setEntries(prev => [...prev, { id: `error-${Date.now()}`, kind: "result", title: "Yêu cầu thất bại", text: error.message, time: "Vừa xong", meta: `${provider} · Lỗi` }]))
@@ -160,6 +174,7 @@ export default function Home() {
         </div>)}
       </div>
       <div className="composer-wrap">
+        {draft.trim() && <div className="usage-plan"><div className="usage-plan-head"><span>USAGE PROFILE</span><b>{usagePlan.profile}</b><em>Risk: {usagePlan.risk}</em></div><div className="usage-grid"><div><small>ƯU TIÊN</small><b>{usagePlan.priority}</b></div><div><small>CÔNG CỤ</small><b>{usagePlan.tool}</b></div><div><small>KIỂM CHỨNG</small><b>{usagePlan.verification}</b></div><div><small>OUTPUT</small><b>{usagePlan.output}</b></div></div><p>✓ Fact cần nguồn · ✓ Suy luận phải gắn nhãn · ✓ Tự chọn tool trước khi chọn model <span>Phân tích cục bộ · 0 token</span></p></div>}
         {clarification && (clarification.needed ? <div className="clarify-card"><div className="clarify-head"><span>?</span><div><b>Cần làm rõ trước khi thực hiện</b><small>{clarification.reason} · Rule cục bộ · 0 token</small></div><em>Auto</em></div><p>Bạn muốn tiếp tục phần nào?</p><div className="clarify-options"><button onClick={()=>setClarifiedScope("Sửa căn chỉnh ô gộp sát lề phải")}>Căn chỉnh ô gộp <small>Đề xuất</small></button><button onClick={()=>setClarifiedScope("Sửa đường viền của bảng")}>Đường viền bảng</button><button onClick={()=>setClarifiedScope("Kiểm tra cả căn chỉnh và đường viền")}>Cả hai</button></div><div className="kept-constraint">✓ Giữ nguyên ràng buộc: không sửa module OCR</div></div> : <div className="task-preview"><span>✓</span><p><b>Đã hiểu yêu cầu</b> {clarification.summary}</p><button onClick={()=>setClarifiedScope("")}>Chỉnh lại</button></div>)}
         {!provider ? <div className="connection-warning"><span>!</span><p><b>Chưa có model được kết nối</b> Hãy nhập API key để bắt đầu xử lý thật.</p><button onClick={()=>setProvidersOpen(true)}>Kết nối model</button></div> : <div className="connected-bar"><span>✓</span><p><b>{provider}</b> · {model}</p><button onClick={disconnectProvider}>Ngắt kết nối</button></div>}
         <div className="composer"><textarea aria-label="Nhập yêu cầu" value={draft} onChange={e=>{setDraft(e.target.value);setClarifiedScope("")}} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}}} placeholder={provider ? "Nhập yêu cầu..." : "Kết nối model trước khi gửi yêu cầu..."}/><div className="composer-actions"><div><select aria-label="Chọn hãng hoặc model" value={provider || ""} disabled><option>{provider ? `${provider} · ${model}` : "Chưa có model"}</option></select><button>＋ Đính kèm</button><button className="context-on"><i/> Context tự động</button></div><button className="send" aria-label="Gửi" onClick={sendMessage} disabled={!provider || !draft.trim() || sending || Boolean(clarification?.needed)}><Icon name="send"/></button></div></div><p>Clarification: Auto · API key chỉ giữ trong phiên tab này</p>
@@ -167,7 +182,7 @@ export default function Home() {
     </section>
 
     <aside className="brain"><div className="brain-title"><Icon name="brain"/><div><span>BỘ NHỚ DỰ ÁN</span><b>Đang đồng bộ</b></div><i/></div><div className="brain-tabs"><button className="active">Hiện tại</button><button>Bộ nhớ</button><button>Sử dụng</button></div>
-      <section><label>TRẠNG THÁI HIỆN TẠI</label><div className="state-card"><span className="pulse"/><div><b>Repair right-edge cells</b><small>Table reconstruction · In progress</small></div></div></section>
+      <section><label>CẤU HÌNH SỬ DỤNG AI</label><div className="state-card"><span className="pulse"/><div><b>{draft.trim() ? usagePlan.profile : "Auto profile"}</b><small>{draft.trim() ? usagePlan.tool : "Nêu mục tiêu, hệ thống tự cấu hình"}</small></div></div></section>
       <section><div className="section-row"><label>RÀNG BUỘC ĐANG ÁP DỤNG</label><span>2</span></div><div className="memory-item"><i>!</i><p>Không sửa module OCR khi xử lý bảng DOCX.</p></div><div className="memory-item"><i>⌁</i><p>Phần tính toán hình học phải tách khỏi OCR.</p></div></section>
       <section><div className="section-row"><label>CONTEXT CỦA YÊU CẦU NÀY</label><button>Kiểm tra</button></div><div className="metric"><span>Context đã chọn</span><b>4,218 <small>token</small></b></div><div className="bar"><i/></div><div className="saved"><span>Context đã tránh</span><b>83.8%</b></div><div className="sources"><span>2 quyết định</span><span>3 symbol</span><span>1 kiểm thử</span></div></section>
       <section><label>QUYẾT ĐỊNH GẦN ĐÂY</label><button className="decision-link"><i/> Use MinerU for layout detection <Icon name="chevron"/></button></section>
