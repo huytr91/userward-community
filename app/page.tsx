@@ -46,9 +46,15 @@ function highlight(text: string, query: string) {
 }
 
 export default function Home() {
-  const [entries] = useState<Entry[]>(initialEntries);
+  const [entries, setEntries] = useState<Entry[]>(initialEntries);
   const [draft, setDraft] = useState("");
-  const [provider] = useState("");
+  const [provider, setProvider] = useState("");
+  const [model, setModel] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [credentialProvider, setCredentialProvider] = useState("");
+  const [connectionError, setConnectionError] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  const [sending, setSending] = useState(false);
   const [providersOpen, setProvidersOpen] = useState(false);
   const [clarifiedScope, setClarifiedScope] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -73,6 +79,10 @@ export default function Home() {
   }, [draft, clarifiedScope]);
 
   useEffect(() => {
+    const savedProvider = sessionStorage.getItem("minimum-provider") || "";
+    const savedModel = sessionStorage.getItem("minimum-model") || "";
+    const savedKey = sessionStorage.getItem("minimum-api-key") || "";
+    if (savedProvider && savedModel && savedKey) { setProvider(savedProvider); setModel(savedModel); setApiKey(savedKey); }
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setSearchOpen(true); setTimeout(() => searchRef.current?.focus(), 20); }
       if (e.key === "Escape") setSearchOpen(false);
@@ -92,13 +102,41 @@ export default function Home() {
   const sendMessage = () => {
     const text = draft.trim();
     if (!text || !provider) { setProvidersOpen(true); return; }
+    if (clarification?.needed) return;
+    const userEntry: Entry = { id: `user-${Date.now()}`, kind: "message", role: "user", text, time: "Vừa xong" };
+    setEntries(prev => [...prev, userEntry]); setDraft(""); setSending(true);
+    setTimeout(() => timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: "smooth" }), 30);
+    fetch("/api/providers/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider, apiKey, model, prompt: clarifiedScope ? `${text}\n\nPhạm vi đã làm rõ: ${clarifiedScope}` : text }) })
+      .then(async response => { const data = await response.json(); if (!response.ok) throw new Error(data.error || "Không thể xử lý yêu cầu."); return data; })
+      .then(data => setEntries(prev => [...prev, { id: `ai-${Date.now()}`, kind: "message", role: "ai", text: data.text, time: "Vừa xong" }]))
+      .catch(error => setEntries(prev => [...prev, { id: `error-${Date.now()}`, kind: "result", title: "Yêu cầu thất bại", text: error.message, time: "Vừa xong", meta: `${provider} · Lỗi` }]))
+      .finally(() => { setSending(false); setClarifiedScope(""); setTimeout(() => timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: "smooth" }), 30); });
+  };
+
+  const connectProvider = async () => {
+    if (!credentialProvider || !apiKey.trim()) return;
+    setConnecting(true); setConnectionError("");
+    try {
+      const response = await fetch("/api/providers/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider: credentialProvider, apiKey }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Kết nối thất bại.");
+      setProvider(credentialProvider); setModel(data.model);
+      sessionStorage.setItem("minimum-provider", credentialProvider); sessionStorage.setItem("minimum-model", data.model); sessionStorage.setItem("minimum-api-key", apiKey);
+      setProvidersOpen(false); setCredentialProvider("");
+    } catch (error) { setConnectionError(error instanceof Error ? error.message : "Kết nối thất bại."); }
+    finally { setConnecting(false); }
+  };
+
+  const disconnectProvider = () => {
+    setProvider(""); setModel(""); setApiKey("");
+    sessionStorage.removeItem("minimum-provider"); sessionStorage.removeItem("minimum-model"); sessionStorage.removeItem("minimum-api-key");
   };
 
   return <main className="shell">
     <aside className="projects">
       <div className="brand"><div className="brandmark">M</div><span>Minimum</span></div>
       <button className="new-project"><Icon name="plus"/> Dự án mới</button>
-      <button className="provider-button" onClick={()=>setProvidersOpen(true)}>⌘ <span>Kết nối model</span><b>0</b></button>
+      <button className="provider-button" onClick={()=>setProvidersOpen(true)}>⌘ <span>{provider || "Kết nối model"}</span><b>{provider ? "✓" : "0"}</b></button>
       <p className="section-label">DỰ ÁN</p>
       <nav>{projects.map((p, i) => <button key={p} className={i === 0 ? "project active" : "project"}><span className="project-dot">{p[0]}</span><span>{p}</span>{i === 0 && <span className="live-dot"/>}</button>)}</nav>
       <div className="sidebar-bottom"><button><span>?</span> Trợ giúp</button><div className="profile"><div>HT</div><span><b>Huy Tran</b><small>Local workspace</small></span></div></div>
@@ -117,8 +155,8 @@ export default function Home() {
       </div>
       <div className="composer-wrap">
         {clarification && (clarification.needed ? <div className="clarify-card"><div className="clarify-head"><span>?</span><div><b>Cần làm rõ trước khi thực hiện</b><small>{clarification.reason} · Rule cục bộ · 0 token</small></div><em>Auto</em></div><p>Bạn muốn tiếp tục phần nào?</p><div className="clarify-options"><button onClick={()=>setClarifiedScope("Sửa căn chỉnh ô gộp sát lề phải")}>Căn chỉnh ô gộp <small>Đề xuất</small></button><button onClick={()=>setClarifiedScope("Sửa đường viền của bảng")}>Đường viền bảng</button><button onClick={()=>setClarifiedScope("Kiểm tra cả căn chỉnh và đường viền")}>Cả hai</button></div><div className="kept-constraint">✓ Giữ nguyên ràng buộc: không sửa module OCR</div></div> : <div className="task-preview"><span>✓</span><p><b>Đã hiểu yêu cầu</b> {clarification.summary}</p><button onClick={()=>setClarifiedScope("")}>Chỉnh lại</button></div>)}
-        <div className="connection-warning"><span>!</span><p><b>Chưa có model được kết nối</b> Yêu cầu sẽ không được gửi hoặc xử lý.</p><button onClick={()=>setProvidersOpen(true)}>Kết nối model</button></div>
-        <div className="composer"><textarea aria-label="Nhập yêu cầu" value={draft} onChange={e=>{setDraft(e.target.value);setClarifiedScope("")}} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}}} placeholder="Kết nối model trước khi gửi yêu cầu..."/><div className="composer-actions"><div><select aria-label="Chọn hãng hoặc model" value="" disabled><option>Chưa có model</option></select><button>＋ Đính kèm</button><button className="context-on"><i/> Context tự động</button></div><button className="send" aria-label="Gửi" onClick={sendMessage} disabled><Icon name="send"/></button></div></div><p>Clarification: Auto · Không khóa nhà cung cấp · Không tạo phản hồi giả</p>
+        {!provider ? <div className="connection-warning"><span>!</span><p><b>Chưa có model được kết nối</b> Hãy nhập API key để bắt đầu xử lý thật.</p><button onClick={()=>setProvidersOpen(true)}>Kết nối model</button></div> : <div className="connected-bar"><span>✓</span><p><b>{provider}</b> · {model}</p><button onClick={disconnectProvider}>Ngắt kết nối</button></div>}
+        <div className="composer"><textarea aria-label="Nhập yêu cầu" value={draft} onChange={e=>{setDraft(e.target.value);setClarifiedScope("")}} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}}} placeholder={provider ? "Nhập yêu cầu..." : "Kết nối model trước khi gửi yêu cầu..."}/><div className="composer-actions"><div><select aria-label="Chọn hãng hoặc model" value={provider || ""} disabled><option>{provider ? `${provider} · ${model}` : "Chưa có model"}</option></select><button>＋ Đính kèm</button><button className="context-on"><i/> Context tự động</button></div><button className="send" aria-label="Gửi" onClick={sendMessage} disabled={!provider || !draft.trim() || sending || Boolean(clarification?.needed)}><Icon name="send"/></button></div></div><p>Clarification: Auto · API key chỉ giữ trong phiên tab này</p>
       </div>
     </section>
 
@@ -137,8 +175,8 @@ export default function Home() {
         {results.length ? results.map((r, i) => <button key={r.id} className={i === selected ? "result selected" : "result"} onMouseEnter={()=>setSelected(i)} onClick={()=>jumpTo(r.id)}><span className={`result-icon ${r.kind}`}>{r.kind === "decision" ? "◆" : r.kind === "task" ? "✓" : r.kind === "file" ? "↗" : r.kind === "result" ? "●" : r.role === "user" ? "HT" : "M"}</span><span className="result-copy"><span><b>{highlight(r.title || (r.role === "user" ? "Bạn" : "Minimum"), query)}</b><time>{r.time}</time></span><p>{highlight(r.text, query)}</p><small>{r.meta || (r.kind === "message" ? "Message · PDF Converter" : r.kind)}</small></span><Icon name="chevron"/></button>) : <div className="empty"><Icon name="search"/><b>Không tìm thấy nội dung phù hợp</b><span>Thử từ khóa ngắn hơn hoặc chọn bộ lọc khác.</span></div>}
       </div><footer><span><kbd>↵</kbd> Mở trong timeline</span><span><kbd>Esc</kbd> Đóng</span><button>Hỏi AI về lịch sử →</button></footer>
     </div></div>}
-    {providersOpen && <div className="overlay" onMouseDown={e=>e.target===e.currentTarget&&setProvidersOpen(false)}><div className="provider-modal"><header><div><small>MODEL CONNECTIONS</small><h2>Kết nối nhà cung cấp AI</h2><p>Dự án và bộ nhớ không phụ thuộc vào bất kỳ hãng nào.</p></div><button onClick={()=>setProvidersOpen(false)}><Icon name="close"/></button></header><div className="provider-list">{[
-      ["OpenAI", "GPT models", "API key"], ["Anthropic", "Claude models", "API key"], ["Google", "Gemini models", "API key"], ["Local · Ollama", "Models trên máy", "Local endpoint"]
-    ].map(([name,desc,method])=><div className="provider-row" key={name}><span className="provider-logo">{name[0]}</span><div><b>{name}</b><small>{desc} · {method}</small></div><button disabled title="Backend kết nối provider chưa được triển khai">Chưa khả dụng</button></div>)}</div><footer><span>Chức năng kết nối thật chưa được triển khai trong prototype này.</span><button onClick={()=>setProvidersOpen(false)}>Đóng</button></footer></div></div>}
+    {providersOpen && <div className="overlay" onMouseDown={e=>e.target===e.currentTarget&&setProvidersOpen(false)}><div className="provider-modal"><header><div><small>KẾT NỐI MODEL</small><h2>Kết nối nhà cung cấp AI</h2><p>Key được kiểm tra thật và chỉ giữ trong phiên tab hiện tại.</p></div><button onClick={()=>setProvidersOpen(false)}><Icon name="close"/></button></header><div className="provider-list">{[
+      ["OpenAI", "GPT models", "API key"], ["Anthropic", "Claude models", "API key"], ["Google", "Gemini models", "API key"]
+    ].map(([name,desc,method])=><div className={`provider-row ${credentialProvider===name?"chosen":""}`} key={name}><span className="provider-logo">{name[0]}</span><div><b>{name}</b><small>{desc} · {method}</small></div><button onClick={()=>{setCredentialProvider(name);setApiKey("");setConnectionError("")}}>{provider===name?"Kết nối lại":"Chọn"}</button></div>)}<div className="provider-row local-row"><span className="provider-logo">L</span><div><b>Codex CLI · Claude Code · Ollama</b><small>Cần Local Companion để truy cập chương trình trên máy</small></div><button disabled>Sắp có</button></div>{credentialProvider && <div className="credential-form"><label>API key của {credentialProvider}</label><div><input type="password" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="Dán API key tại đây" autoComplete="off"/><button onClick={connectProvider} disabled={!apiKey.trim()||connecting}>{connecting?"Đang kiểm tra...":"Kiểm tra & kết nối"}</button></div><small>Ứng dụng gọi endpoint danh sách model để xác minh; thao tác này không tạo completion.</small>{connectionError&&<p>{connectionError}</p>}</div>}</div><footer><span>Không lưu API key vào project hoặc database.</span><button onClick={()=>setProvidersOpen(false)}>Đóng</button></footer></div></div>}
   </main>;
 }
