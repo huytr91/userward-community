@@ -53,6 +53,7 @@ export default function Home() {
   const [apiKey, setApiKey] = useState("");
   const [credentialProvider, setCredentialProvider] = useState("");
   const [connectionError, setConnectionError] = useState("");
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [connecting, setConnecting] = useState(false);
   const [sending, setSending] = useState(false);
   const [providersOpen, setProvidersOpen] = useState(false);
@@ -120,11 +121,16 @@ export default function Home() {
       const response = await fetch("/api/providers/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider: credentialProvider, apiKey }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Kết nối thất bại.");
-      setProvider(credentialProvider); setModel(data.model);
-      sessionStorage.setItem("minimum-provider", credentialProvider); sessionStorage.setItem("minimum-model", data.model); sessionStorage.setItem("minimum-api-key", apiKey);
-      setProvidersOpen(false); setCredentialProvider("");
+      setAvailableModels(data.models || [data.model]); setModel(data.model);
     } catch (error) { setConnectionError(error instanceof Error ? error.message : "Kết nối thất bại."); }
     finally { setConnecting(false); }
+  };
+
+  const saveProvider = () => {
+    if (!credentialProvider || !apiKey.trim() || !model) return;
+    setProvider(credentialProvider);
+    sessionStorage.setItem("minimum-provider", credentialProvider); sessionStorage.setItem("minimum-model", model); sessionStorage.setItem("minimum-api-key", apiKey);
+    setProvidersOpen(false); setCredentialProvider(""); setAvailableModels([]);
   };
 
   const disconnectProvider = () => {
@@ -175,10 +181,10 @@ export default function Home() {
         {results.length ? results.map((r, i) => <button key={r.id} className={i === selected ? "result selected" : "result"} onMouseEnter={()=>setSelected(i)} onClick={()=>jumpTo(r.id)}><span className={`result-icon ${r.kind}`}>{r.kind === "decision" ? "◆" : r.kind === "task" ? "✓" : r.kind === "file" ? "↗" : r.kind === "result" ? "●" : r.role === "user" ? "HT" : "M"}</span><span className="result-copy"><span><b>{highlight(r.title || (r.role === "user" ? "Bạn" : "Minimum"), query)}</b><time>{r.time}</time></span><p>{highlight(r.text, query)}</p><small>{r.meta || (r.kind === "message" ? "Message · PDF Converter" : r.kind)}</small></span><Icon name="chevron"/></button>) : <div className="empty"><Icon name="search"/><b>Không tìm thấy nội dung phù hợp</b><span>Thử từ khóa ngắn hơn hoặc chọn bộ lọc khác.</span></div>}
       </div><footer><span><kbd>↵</kbd> Mở trong timeline</span><span><kbd>Esc</kbd> Đóng</span><button>Hỏi AI về lịch sử →</button></footer>
     </div></div>}
-    {providersOpen && <div className="overlay" onMouseDown={e=>e.target===e.currentTarget&&setProvidersOpen(false)}><div className="provider-modal"><header><div><small>KẾT NỐI MODEL</small><h2>Kết nối nhà cung cấp AI</h2><p>Key được kiểm tra thật và chỉ giữ trong phiên tab hiện tại.</p></div><button onClick={()=>setProvidersOpen(false)}><Icon name="close"/></button></header><div className="provider-list">{[
+    {providersOpen && <div className="overlay" onMouseDown={e=>e.target===e.currentTarget&&setProvidersOpen(false)}><div className="provider-modal"><header><div><small>KẾT NỐI MODEL</small><h2>Một key, nhiều model</h2><p>Khuyến nghị OpenRouter để dùng nhiều hãng qua một kết nối duy nhất.</p></div><button onClick={()=>setProvidersOpen(false)}><Icon name="close"/></button></header><div className="provider-list"><div className="router-callout"><b>Khuyến nghị · OpenRouter</b><span>Một API key cho Gemini, Claude, GPT, DeepSeek, Qwen, Kimi và nhiều model khác.</span><button onClick={()=>{setCredentialProvider("OpenRouter");setApiKey("");setModel("");setAvailableModels([]);setConnectionError("")}}>Dùng OpenRouter</button></div>{[
       ["OpenAI", "GPT models", "API key"], ["Anthropic", "Claude models", "API key"], ["Google", "Gemini models", "API key"],
       ["DeepSeek", "DeepSeek Chat & Reasoner", "API key"], ["Qwen", "Alibaba Cloud Model Studio", "DashScope key"],
-      ["Kimi", "Moonshot AI models", "API key"], ["OpenRouter", "Hàng trăm model qua một key", "API key"]
-    ].map(([name,desc,method])=><div className={`provider-row ${credentialProvider===name?"chosen":""}`} key={name}><span className="provider-logo">{name[0]}</span><div><b>{name}</b><small>{desc} · {method}</small></div><button onClick={()=>{setCredentialProvider(name);setApiKey("");setConnectionError("")}}>{provider===name?"Kết nối lại":"Chọn"}</button></div>)}<div className="provider-row local-row"><span className="provider-logo">L</span><div><b>Local Companion</b><small>Codex CLI · Claude Code · Ollama · vLLM · Qwen/Kimi local</small></div><button disabled>Sắp có</button></div>{credentialProvider && <div className="credential-form"><label>API key của {credentialProvider}</label><div><input type="password" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="Dán API key tại đây" autoComplete="off"/><button onClick={connectProvider} disabled={!apiKey.trim()||connecting}>{connecting?"Đang kiểm tra...":"Kiểm tra & kết nối"}</button></div><small>Ứng dụng gọi endpoint danh sách model để xác minh; thao tác này không tạo completion.</small>{connectionError&&<p>{connectionError}</p>}</div>}</div><footer><span>Không lưu API key vào project hoặc database.</span><button onClick={()=>setProvidersOpen(false)}>Đóng</button></footer></div></div>}
+      ["Kimi", "Moonshot AI models", "API key"], ["OpenRouter", "Nhiều hãng qua một key", "Khuyến nghị"]
+    ].map(([name,desc,method])=><div className={`provider-row ${credentialProvider===name?"chosen":""}`} key={name}><span className="provider-logo">{name[0]}</span><div><b>{name}</b><small>{desc} · {method}</small></div><button onClick={()=>{setCredentialProvider(name);setApiKey("");setModel("");setAvailableModels([]);setConnectionError("")}}>{provider===name?"Kết nối lại":"Chọn"}</button></div>)}<div className="provider-row local-row"><span className="provider-logo">9</span><div><b>9Router · Local gateway</b><small>Quản lý key, subscription và fallback tại localhost:20128</small></div><button disabled>Cần Companion</button></div>{credentialProvider && <div className="credential-form"><label>API key của {credentialProvider}</label><div><input type="password" value={apiKey} onChange={e=>{setApiKey(e.target.value);setAvailableModels([])}} placeholder="Dán API key tại đây" autoComplete="off"/><button onClick={connectProvider} disabled={!apiKey.trim()||connecting}>{connecting?"Đang kiểm tra...":"Kiểm tra key"}</button></div><small>Key chỉ tồn tại trong phiên tab này; không lưu vào project hay database.</small>{availableModels.length>0&&<div className="model-picker"><label>Chọn model</label><select value={model} onChange={e=>setModel(e.target.value)}>{availableModels.map(item=><option value={item} key={item}>{item}</option>)}</select><button onClick={saveProvider}>Lưu & kết nối</button></div>}{connectionError&&<p>{connectionError}</p>}</div>}</div><footer><span>OpenRouter chạy ngay; 9Router cần Local Companion để website gọi máy bạn an toàn.</span><button onClick={()=>setProvidersOpen(false)}>Đóng</button></footer></div></div>}
   </main>;
 }

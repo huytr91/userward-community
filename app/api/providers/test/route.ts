@@ -47,7 +47,10 @@ export async function POST(request: Request) {
       model = preferred[provider]?.find(x => ids.includes(x)) || ids.find(x => /deepseek|qwen|kimi|moonshot|:free/.test(x)) || ids[0] || "";
     }
     if (!model) return json({ error: "Đăng nhập hợp lệ nhưng không tìm thấy model tạo văn bản khả dụng." }, 422);
-    return json({ ok: true, provider, model });
+    const models = provider === "Google"
+      ? (data.models || []).filter(x => x.supportedGenerationMethods?.includes("generateContent")).map(x => x.name?.replace("models/", "") || "").filter(Boolean)
+      : (data.data || []).map(x => x.id || "").filter(Boolean);
+    return json({ ok: true, provider, model, models: models.slice(0, 300) });
   } catch {
     return json({ error: "Không thể kết nối provider. Hãy kiểm tra mạng và API key." }, 500);
   }
