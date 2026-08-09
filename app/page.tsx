@@ -46,12 +46,10 @@ function highlight(text: string, query: string) {
 }
 
 export default function Home() {
-  const [entries, setEntries] = useState<Entry[]>(initialEntries);
+  const [entries] = useState<Entry[]>(initialEntries);
   const [draft, setDraft] = useState("");
-  const [provider, setProvider] = useState("Auto · cân bằng");
-  const [sending, setSending] = useState(false);
+  const [provider] = useState("");
   const [providersOpen, setProvidersOpen] = useState(false);
-  const [connected, setConnected] = useState<string[]>(["Local · Ollama"]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | Kind>("all");
@@ -84,23 +82,14 @@ export default function Home() {
 
   const sendMessage = () => {
     const text = draft.trim();
-    if (!text || sending) return;
-    const userEntry: Entry = { id: `user-${Date.now()}`, kind: "message", role: "user", text, time: "Vừa xong" };
-    setEntries(prev => [...prev, userEntry]);
-    setDraft(""); setSending(true);
-    setTimeout(() => timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: "smooth" }), 40);
-    setTimeout(() => {
-      const aiEntry: Entry = { id: `ai-${Date.now()}`, kind: "message", role: "ai", time: "Vừa xong", text: `Đã nhận yêu cầu. Mình sẽ dùng ${provider.toLowerCase()} và chỉ nạp phần bộ nhớ liên quan. Đây là phản hồi mô phỏng của prototype; bước tích hợp tiếp theo sẽ kết nối API provider thật.` };
-      setEntries(prev => [...prev, aiEntry]); setSending(false);
-      setTimeout(() => timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: "smooth" }), 40);
-    }, 650);
+    if (!text || !provider) { setProvidersOpen(true); return; }
   };
 
   return <main className="shell">
     <aside className="projects">
       <div className="brand"><div className="brandmark">M</div><span>Minimum</span></div>
       <button className="new-project"><Icon name="plus"/> Dự án mới</button>
-      <button className="provider-button" onClick={()=>setProvidersOpen(true)}>⌘ <span>Kết nối model</span><b>{connected.length}</b></button>
+      <button className="provider-button" onClick={()=>setProvidersOpen(true)}>⌘ <span>Kết nối model</span><b>0</b></button>
       <p className="section-label">DỰ ÁN</p>
       <nav>{projects.map((p, i) => <button key={p} className={i === 0 ? "project active" : "project"}><span className="project-dot">{p[0]}</span><span>{p}</span>{i === 0 && <span className="live-dot"/>}</button>)}</nav>
       <div className="sidebar-bottom"><button><span>?</span> Trợ giúp</button><div className="profile"><div>HT</div><span><b>Huy Tran</b><small>Local workspace</small></span></div></div>
@@ -109,14 +98,15 @@ export default function Home() {
     <section className="workspace">
       <header className="topbar"><div><span className="crumb">DỰ ÁN</span><h1>PDF Converter <span>Dữ liệu cục bộ</span></h1></div><button className="search-trigger" onClick={() => {setSearchOpen(true); setTimeout(()=>searchRef.current?.focus(), 20)}}><Icon name="search"/><span>Tìm trong dự án...</span><kbd>Ctrl K</kbd></button></header>
       <div className="timeline" id="timeline" ref={timelineRef}>
+        <div className="demo-notice"><b>Dữ liệu minh họa</b><span>Timeline bên dưới dùng để trình diễn giao diện, không phải kết quả xử lý thật.</span></div>
         <div className="day"><span>06 THÁNG 8</span></div>
         {entries.map((e, i) => <div key={e.id} id={e.id} className={`entry ${e.kind} ${e.role || ""} ${flash === e.id ? "flash" : ""}`}>
           {e.kind === "message" ? <>
-            <div className="avatar">{e.role === "user" ? "HT" : "M"}</div><div className="message-body"><div className="message-head"><b>{e.role === "user" ? "Bạn" : "Minimum"}</b><time>{e.time}</time></div><p>{e.text}</p>{e.role === "ai" && <div className="usage"><span>Model <b>Standard</b></span><span>Input <b>4.2k</b></span><span>Avoided <b>21.7k</b></span><span>Cost <b>$0.02</b></span></div>}</div>
+            <div className="avatar">{e.role === "user" ? "HT" : "M"}</div><div className="message-body"><div className="message-head"><b>{e.role === "user" ? "Bạn" : "Minimum"}</b><time>{e.time}</time></div><p>{e.text}</p></div>
           </> : <><div className="rail"><span>{e.kind === "decision" ? "◆" : e.kind === "task" ? "✓" : e.kind === "file" ? "↗" : "●"}</span></div><div className="card"><div className="card-top"><div><small>{e.meta}</small><h3>{e.title}</h3></div><time>{e.time}</time></div><p>{e.text}</p>{e.kind === "task" && i === 9 && <div className="progress"><i/><span>Đang thực thi</span></div>}</div></>}
         </div>)}
       </div>
-      <div className="composer-wrap"><div className="composer"><textarea aria-label="Nhập yêu cầu" value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}}} placeholder="Nhập yêu cầu hoặc tiếp tục công việc đang làm..."/><div className="composer-actions"><div><select aria-label="Chọn hãng hoặc model" value={provider} onChange={e=>setProvider(e.target.value)}><option>Auto · cân bằng</option><option>OpenAI · GPT</option><option>Anthropic · Claude</option><option>Google · Gemini</option><option>Local · Ollama</option></select><button>＋ Đính kèm</button><button className="context-on"><i/> Context tự động</button></div><button className="send" aria-label="Gửi" onClick={sendMessage} disabled={!draft.trim()||sending}><Icon name="send"/></button></div></div><p>Không khóa nhà cung cấp · Chỉ gửi context tối thiểu cần thiết</p></div>
+      <div className="composer-wrap"><div className="connection-warning"><span>!</span><p><b>Chưa có model được kết nối</b> Yêu cầu sẽ không được gửi hoặc xử lý.</p><button onClick={()=>setProvidersOpen(true)}>Kết nối model</button></div><div className="composer"><textarea aria-label="Nhập yêu cầu" value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}}} placeholder="Kết nối model trước khi gửi yêu cầu..."/><div className="composer-actions"><div><select aria-label="Chọn hãng hoặc model" value="" disabled><option>Chưa có model</option></select><button>＋ Đính kèm</button><button className="context-on"><i/> Context tự động</button></div><button className="send" aria-label="Gửi" onClick={sendMessage} disabled><Icon name="send"/></button></div></div><p>Không khóa nhà cung cấp · Không tạo phản hồi hoặc số liệu giả</p></div>
     </section>
 
     <aside className="brain"><div className="brain-title"><Icon name="brain"/><div><span>BỘ NHỚ DỰ ÁN</span><b>Đang đồng bộ</b></div><i/></div><div className="brain-tabs"><button className="active">Hiện tại</button><button>Bộ nhớ</button><button>Sử dụng</button></div>
@@ -136,6 +126,6 @@ export default function Home() {
     </div></div>}
     {providersOpen && <div className="overlay" onMouseDown={e=>e.target===e.currentTarget&&setProvidersOpen(false)}><div className="provider-modal"><header><div><small>MODEL CONNECTIONS</small><h2>Kết nối nhà cung cấp AI</h2><p>Dự án và bộ nhớ không phụ thuộc vào bất kỳ hãng nào.</p></div><button onClick={()=>setProvidersOpen(false)}><Icon name="close"/></button></header><div className="provider-list">{[
       ["OpenAI", "GPT models", "API key"], ["Anthropic", "Claude models", "API key"], ["Google", "Gemini models", "API key"], ["Local · Ollama", "Models trên máy", "Local endpoint"]
-    ].map(([name,desc,method])=>{const on=connected.includes(name);return <div className="provider-row" key={name}><span className="provider-logo">{name[0]}</span><div><b>{name}</b><small>{desc} · {method}</small></div><button className={on?"connected":""} onClick={()=>setConnected(prev=>on?prev.filter(x=>x!==name):[...prev,name])}>{on?"Đã kết nối":"Kết nối"}</button></div>})}</div><footer><span>API key sẽ được mã hóa và không đưa vào prompt.</span><button onClick={()=>setProvidersOpen(false)}>Xong</button></footer></div></div>}
+    ].map(([name,desc,method])=><div className="provider-row" key={name}><span className="provider-logo">{name[0]}</span><div><b>{name}</b><small>{desc} · {method}</small></div><button disabled title="Backend kết nối provider chưa được triển khai">Chưa khả dụng</button></div>)}</div><footer><span>Chức năng kết nối thật chưa được triển khai trong prototype này.</span><button onClick={()=>setProvidersOpen(false)}>Đóng</button></footer></div></div>}
   </main>;
 }
