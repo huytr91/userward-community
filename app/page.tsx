@@ -50,6 +50,7 @@ export default function Home() {
   const [draft, setDraft] = useState("");
   const [provider] = useState("");
   const [providersOpen, setProvidersOpen] = useState(false);
+  const [clarifiedScope, setClarifiedScope] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | Kind>("all");
@@ -62,6 +63,14 @@ export default function Home() {
     const q = query.toLowerCase().trim();
     return entries.filter(e => (filter === "all" || e.kind === filter) && (!q || `${e.title || ""} ${e.text} ${e.meta || ""}`.toLowerCase().includes(q)));
   }, [query, filter]);
+
+  const clarification = useMemo(() => {
+    const q = draft.trim().toLowerCase();
+    if (!q) return null;
+    const ambiguous = ["sửa tiếp", "cái đó", "phần đó", "hôm qua", "như cũ"].some(term => q.includes(term));
+    if (ambiguous && !clarifiedScope) return { needed: true, reason: "Chưa xác định chính xác phạm vi cần xử lý." };
+    return { needed: false, summary: clarifiedScope || (q.includes("audit") ? "Kiểm tra dự án và báo cáo vấn đề" : "Thực hiện yêu cầu theo nội dung đã nhập") };
+  }, [draft, clarifiedScope]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -106,7 +115,11 @@ export default function Home() {
           </> : <><div className="rail"><span>{e.kind === "decision" ? "◆" : e.kind === "task" ? "✓" : e.kind === "file" ? "↗" : "●"}</span></div><div className="card"><div className="card-top"><div><small>{e.meta}</small><h3>{e.title}</h3></div><time>{e.time}</time></div><p>{e.text}</p>{e.kind === "task" && i === 9 && <div className="progress"><i/><span>Đang thực thi</span></div>}</div></>}
         </div>)}
       </div>
-      <div className="composer-wrap"><div className="connection-warning"><span>!</span><p><b>Chưa có model được kết nối</b> Yêu cầu sẽ không được gửi hoặc xử lý.</p><button onClick={()=>setProvidersOpen(true)}>Kết nối model</button></div><div className="composer"><textarea aria-label="Nhập yêu cầu" value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}}} placeholder="Kết nối model trước khi gửi yêu cầu..."/><div className="composer-actions"><div><select aria-label="Chọn hãng hoặc model" value="" disabled><option>Chưa có model</option></select><button>＋ Đính kèm</button><button className="context-on"><i/> Context tự động</button></div><button className="send" aria-label="Gửi" onClick={sendMessage} disabled><Icon name="send"/></button></div></div><p>Không khóa nhà cung cấp · Không tạo phản hồi hoặc số liệu giả</p></div>
+      <div className="composer-wrap">
+        {clarification && (clarification.needed ? <div className="clarify-card"><div className="clarify-head"><span>?</span><div><b>Cần làm rõ trước khi thực hiện</b><small>{clarification.reason} · Rule cục bộ · 0 token</small></div><em>Auto</em></div><p>Bạn muốn tiếp tục phần nào?</p><div className="clarify-options"><button onClick={()=>setClarifiedScope("Sửa căn chỉnh ô gộp sát lề phải")}>Căn chỉnh ô gộp <small>Đề xuất</small></button><button onClick={()=>setClarifiedScope("Sửa đường viền của bảng")}>Đường viền bảng</button><button onClick={()=>setClarifiedScope("Kiểm tra cả căn chỉnh và đường viền")}>Cả hai</button></div><div className="kept-constraint">✓ Giữ nguyên ràng buộc: không sửa module OCR</div></div> : <div className="task-preview"><span>✓</span><p><b>Đã hiểu yêu cầu</b> {clarification.summary}</p><button onClick={()=>setClarifiedScope("")}>Chỉnh lại</button></div>)}
+        <div className="connection-warning"><span>!</span><p><b>Chưa có model được kết nối</b> Yêu cầu sẽ không được gửi hoặc xử lý.</p><button onClick={()=>setProvidersOpen(true)}>Kết nối model</button></div>
+        <div className="composer"><textarea aria-label="Nhập yêu cầu" value={draft} onChange={e=>{setDraft(e.target.value);setClarifiedScope("")}} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}}} placeholder="Kết nối model trước khi gửi yêu cầu..."/><div className="composer-actions"><div><select aria-label="Chọn hãng hoặc model" value="" disabled><option>Chưa có model</option></select><button>＋ Đính kèm</button><button className="context-on"><i/> Context tự động</button></div><button className="send" aria-label="Gửi" onClick={sendMessage} disabled><Icon name="send"/></button></div></div><p>Clarification: Auto · Không khóa nhà cung cấp · Không tạo phản hồi giả</p>
+      </div>
     </section>
 
     <aside className="brain"><div className="brain-title"><Icon name="brain"/><div><span>BỘ NHỚ DỰ ÁN</span><b>Đang đồng bộ</b></div><i/></div><div className="brain-tabs"><button className="active">Hiện tại</button><button>Bộ nhớ</button><button>Sử dụng</button></div>
