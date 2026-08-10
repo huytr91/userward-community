@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 type Kind = "message" | "task" | "decision" | "result" | "file";
 type Entry = { id: string; kind: Kind; title?: string; text: string; time: string; meta?: string; role?: "user" | "ai" };
 type Attachment = { name: string; size: number; text?: string; dataUrl?: string; mime?: string };
-type LocalProject = { id: string; name: string; folderName?: string; entries: Entry[] };
+type LocalProject = { id: string; name: string; kind?: "chat" | "project"; folderName?: string; entries: Entry[] };
 type WorkspaceFile = { path: string; handle: FileSystemFileHandle };
 type PatchFile = { path: string; content: string; operation: "create" | "update" };
 type PendingPatch = { files: PatchFile[]; summary: string };
@@ -183,8 +183,15 @@ export default function Home() {
 
   const createProject = () => {
     const name = newProjectName.trim(); if (!name) return;
-    const project: LocalProject = { id: `project-${Date.now()}`, name, entries: [] };
+    const project: LocalProject = { id: `project-${Date.now()}`, name, kind: "project", entries: [] };
     setProjectList(prev => [...prev, project]); setActiveProjectId(project.id); setEntries([]); setNewProjectName(""); setNewProjectOpen(false);
+  };
+
+  const createChat = () => {
+    const now = new Date();
+    const chat: LocalProject = { id: `chat-${Date.now()}`, name: `Chat ${now.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}`, kind: "chat", entries: [] };
+    setProjectList(prev => [...prev, chat]); setActiveProjectId(chat.id); setEntries([]); setFolderHandle(null); setWorkspaceFiles([]); setSelectedWorkspaceFile(""); setWorkspaceFileText(""); setPendingPatch(null); setExecutionMode("analyze");
+    setTimeout(()=>document.querySelector<HTMLTextAreaElement>('.composer textarea')?.focus(),20);
   };
 
   const scanFolder = async (root: FileSystemDirectoryHandle) => {
@@ -302,9 +309,10 @@ export default function Home() {
   return <main className="shell">
     <aside className="projects">
       <div className="brand"><div className="brandmark">M</div><span>Minimum</span></div>
-      <button className="new-project" onClick={()=>setNewProjectOpen(true)}><Icon name="plus"/> Dự án mới</button>
+      <button className="new-project" onClick={createChat}><Icon name="plus"/> Chat mới</button>
+      <button className="new-project-link" onClick={()=>setNewProjectOpen(true)}>＋ Tạo dự án có folder</button>
       <button className="provider-button" onClick={()=>setProvidersOpen(true)}>⌘ <span>{provider || "Kết nối model"}</span><b>{provider ? "✓" : "0"}</b></button>
-      <p className="section-label">DỰ ÁN</p>
+      <p className="section-label">LỊCH SỬ</p>
       <nav>{projectList.map(project => <button key={project.id} onClick={()=>selectProject(project.id)} className={project.id === activeProjectId ? "project active" : "project"}><span className="project-dot">{project.name[0]}</span><span>{project.name}</span>{project.id === activeProjectId && <span className="live-dot"/>}</button>)}</nav>
       <div className="sidebar-bottom"><button><span>?</span> Trợ giúp</button><div className="profile"><div>HT</div><span><b>Huy Tran</b><small>Local workspace</small></span></div></div>
     </aside>
