@@ -5,6 +5,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 type Kind = "message" | "task" | "decision" | "result" | "file";
 type Entry = { id: string; kind: Kind; title?: string; text: string; time: string; meta?: string; role?: "user" | "ai" };
 type Attachment = { name: string; size: number; text: string };
+type LocalProject = { id: string; name: string; folderName?: string; entries: Entry[] };
+type WorkspaceFile = { path: string; handle: FileSystemFileHandle };
+type PendingPatch = { path: string; content: string; summary: string };
 
 const initialEntries: Entry[] = [
   { id: "m1", kind: "message", role: "user", text: "Mình muốn bộ chuyển PDF sang DOCX chạy hoàn toàn local và giữ đúng bố cục bảng.", time: "06 Aug · 09:14" },
@@ -20,7 +23,11 @@ const initialEntries: Entry[] = [
   { id: "m4", kind: "message", role: "ai", text: "Mình đã cô lập lỗi trong phép đổi pixel sang twip. Constraint không sửa OCR đang được giữ nguyên.", time: "Today · 09:06" },
 ];
 
-const projects = ["PDF Converter", "Financial Analyzer", "Automation Tool"];
+const seedProjects: LocalProject[] = [
+  { id: "pdf", name: "PDF Converter", entries: initialEntries },
+  { id: "finance", name: "Financial Analyzer", entries: [] },
+  { id: "automation", name: "Automation Tool", entries: [] },
+];
 const providerGuides: Record<string, { keyUrl: string; billingUrl: string; keyLabel?: string; note: string }> = {
   OpenRouter: { keyUrl: "https://openrouter.ai/keys", billingUrl: "https://openrouter.ai/settings/credits", keyLabel: "Tạo API key", note: "Key thường bắt đầu bằng sk-or-v1-." },
   OpenAI: { keyUrl: "https://platform.openai.com/api-keys", billingUrl: "https://platform.openai.com/settings/organization/billing/overview", note: "ChatGPT Plus/Pro không bao gồm credit API; billing API là riêng." },
@@ -69,6 +76,17 @@ function buildUsagePlan(input: string) {
 
 export default function Home() {
   const [entries, setEntries] = useState<Entry[]>(initialEntries);
+  const [projectList, setProjectList] = useState<LocalProject[]>(seedProjects);
+  const [activeProjectId, setActiveProjectId] = useState("pdf");
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
+  const [folderHandle, setFolderHandle] = useState<FileSystemDirectoryHandle | null>(null);
+  const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFile[]>([]);
+  const [selectedWorkspaceFile, setSelectedWorkspaceFile] = useState("");
+  const [workspaceFileText, setWorkspaceFileText] = useState("");
+  const [executionMode, setExecutionMode] = useState<"analyze" | "execute">("analyze");
+  const [pendingPatch, setPendingPatch] = useState<PendingPatch | null>(null);
+  const [workspaceError, setWorkspaceError] = useState("");
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [uploadError, setUploadError] = useState("");
@@ -90,6 +108,7 @@ export default function Home() {
   const searchRef = useRef<HTMLInputElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const folderHandlesRef = useRef<Record<string, FileSystemDirectoryHandle>>({});
 
   const results = useMemo(() => {
     const q = query.toLowerCase().trim();
@@ -105,8 +124,11 @@ export default function Home() {
   }, [draft, clarifiedScope]);
   const usagePlan = useMemo(() => buildUsagePlan(draft), [draft]);
   const providerGuide = providerGuides[credentialProvider];
+  const activeProject = projectList.find(project => project.id === activeProjectId) || projectList[0];
 
   useEffect(() => {
+    const savedProjects = localStorage.getItem("minimum-projects");
+    if (savedProjects) { try { const parsed = JSON.parse(savedProjects) as LocalProject[]; setProjectList(parsed); setActiveProjectId(parsed[0]?.id || "pdf"); setEntries(parsed[0]?.entries || []); } catch {} }
     const savedProvider = sessionStorage.getItem("minimum-provider") || "";
     const savedModel = sessionStorage.getItem("minimum-model") || "";
     const savedKey = sessionStorage.getItem("minimum-api-key") || "";
@@ -121,6 +143,60 @@ export default function Home() {
     window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
   }, [searchOpen, results, selected]);
 
+  useEffect(() => {
+    setProjectList(prev => prev.map(project => project.id === activeProjectId ? { ...project, entries } : project));
+  }, [entries]);
+
+  useEffect(() => { localStorage.setItem("minimum-projects", JSON.stringify(projectList)); }, [projectList]);
+
+  const selectProject = async (id: string) => {
+    const next = projectList.find(project => project.id === id); if (!next) return;
+    const handle = folderHandlesRef.current[id] || null;
+    setActiveProjectId(id); setEntries(next.entries); setFolderHandle(handle); setWorkspaceFiles([]); setSelectedWorkspaceFile(""); setWorkspaceFileText(""); setPendingPatch(null); setExecutionMode("analyze");
+    if (handle) await scanFolder(handle);
+  };
+
+  const createProject = () => {
+    const name = newProjectName.trim(); if (!name) return;
+    const project: LocalProject = { id: `project-${Date.now()}`, name, entries: [] };
+    setProjectList(prev => [...prev, project]); setActiveProjectId(project.id); setEntries([]); setNewProjectName(""); setNewProjectOpen(false);
+  };
+
+  const scanFolder = async (root: FileSystemDirectoryHandle) => {
+    const found: WorkspaceFile[] = []; const allowed = /\.(txt|md|csv|json|js|jsx|ts|tsx|py|html|css|xml|yaml|yml|sql|log)$/i;
+    const walk = async (dir: FileSystemDirectoryHandle, prefix = "") => {
+      for await (const [name, handle] of dir.entries()) {
+        if (found.length >= 200 || name === "node_modules" || name === ".git" || name === "dist") continue;
+        const path = prefix ? `${prefix}/${name}` : name;
+        if (handle.kind === "directory") await walk(handle as FileSystemDirectoryHandle, path);
+        else if (allowed.test(name)) found.push({ path, handle: handle as FileSystemFileHandle });
+      }
+    };
+    await walk(root); setWorkspaceFiles(found); return found;
+  };
+
+  const chooseFolder = async () => {
+    setWorkspaceError("");
+    try {
+      if (!("showDirectoryPicker" in window)) throw new Error("Trình duyệt này không hỗ trợ chọn folder. Hãy dùng Chrome hoặc Edge desktop.");
+      const handle = await (window as any).showDirectoryPicker({ mode: "readwrite" }) as FileSystemDirectoryHandle;
+      folderHandlesRef.current[activeProjectId] = handle; setFolderHandle(handle); const found = await scanFolder(handle);
+      setProjectList(prev => prev.map(project => project.id === activeProjectId ? { ...project, folderName: handle.name } : project));
+      if (found[0]) await openWorkspaceFile(found[0]);
+    } catch (error) { if ((error as DOMException)?.name !== "AbortError") setWorkspaceError(error instanceof Error ? error.message : "Không thể mở folder."); }
+  };
+
+  const openWorkspaceFile = async (item: WorkspaceFile) => {
+    const file = await item.handle.getFile(); if (file.size > 500_000) { setWorkspaceError("File lớn hơn 500 KB, chưa đưa vào context để tránh vượt chi phí."); return; }
+    setSelectedWorkspaceFile(item.path); setWorkspaceFileText(await file.text()); setWorkspaceError("");
+  };
+
+  const applyPendingPatch = async () => {
+    if (!pendingPatch) return; const item = workspaceFiles.find(file => file.path === pendingPatch.path); if (!item) { setWorkspaceError("Không tìm thấy file đích trong folder đã cấp quyền."); return; }
+    try { const writable = await item.handle.createWritable(); await writable.write(pendingPatch.content); await writable.close(); setWorkspaceFileText(pendingPatch.content); setEntries(prev => [...prev, { id: `file-${Date.now()}`, kind: "file", title: pendingPatch.path, text: pendingPatch.summary || "Đã áp dụng thay đổi sau khi user xác nhận.", time: "Vừa xong", meta: "File · Đã ghi thật" }]); setPendingPatch(null); }
+    catch { setWorkspaceError("Không thể ghi file. Hãy cấp lại quyền read/write cho folder."); }
+  };
+
   const jumpTo = (id: string) => {
     setSearchOpen(false); setFlash(id);
     setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "center" }), 30);
@@ -134,11 +210,14 @@ export default function Home() {
     const userEntry: Entry = { id: `user-${Date.now()}`, kind: "message", role: "user", text, time: "Vừa xong" };
     setEntries(prev => [...prev, userEntry]); setDraft(""); setSending(true);
     setTimeout(() => timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: "smooth" }), 30);
-    const policy = `EXECUTION MODE: ANALYZE_ONLY (do not claim files were changed)\nUSAGE PROFILE: ${usagePlan.profile}\nPRIORITY: ${usagePlan.priority}\nTOOL STRATEGY: ${usagePlan.tool}\nVERIFICATION: ${usagePlan.verification}\nSOURCE POLICY: ${usagePlan.source}\nINFERENCE POLICY: ${usagePlan.inference}\nOUTPUT CONTRACT: ${usagePlan.output}`;
+    if (executionMode === "execute" && (!folderHandle || !selectedWorkspaceFile)) { setWorkspaceError("Hãy kết nối folder và chọn một file trước khi yêu cầu thực thi."); setSending(false); return; }
+    const executionPolicy = executionMode === "execute" ? `EXECUTION MODE: PATCH_PREVIEW\nReturn ONLY valid JSON: {"path":"${selectedWorkspaceFile}","content":"complete updated file content","summary":"short change summary"}. Never use markdown fences. Modify only the supplied file.` : "EXECUTION MODE: ANALYZE_ONLY (do not claim files were changed)";
+    const policy = `${executionPolicy}\nUSAGE PROFILE: ${usagePlan.profile}\nPRIORITY: ${usagePlan.priority}\nTOOL STRATEGY: ${usagePlan.tool}\nVERIFICATION: ${usagePlan.verification}\nSOURCE POLICY: ${usagePlan.source}\nINFERENCE POLICY: ${usagePlan.inference}\nOUTPUT CONTRACT: ${usagePlan.output}`;
     const files = attachments.map(file => `\n\n--- ATTACHED FILE: ${file.name} ---\n${file.text}`).join("");
-    fetch("/api/providers/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider, apiKey, model, prompt: `${policy}\n\nUSER GOAL:\n${text || "Phân tích các file đính kèm."}${clarifiedScope ? `\n\nPhạm vi đã làm rõ: ${clarifiedScope}` : ""}${files}` }) })
+    const workspaceContext = executionMode === "execute" ? `\n\n--- WORKSPACE FILE: ${selectedWorkspaceFile} ---\n${workspaceFileText}` : "";
+    fetch("/api/providers/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider, apiKey, model, prompt: `${policy}\n\nUSER GOAL:\n${text || "Phân tích các file đính kèm."}${clarifiedScope ? `\n\nPhạm vi đã làm rõ: ${clarifiedScope}` : ""}${files}${workspaceContext}` }) })
       .then(async response => { const data = await response.json(); if (!response.ok) throw new Error(data.error || "Không thể xử lý yêu cầu."); return data; })
-      .then(data => setEntries(prev => [...prev, { id: `ai-${Date.now()}`, kind: "message", role: "ai", text: data.text, time: "Vừa xong" }]))
+      .then(data => { if (executionMode === "execute") { try { const patch = JSON.parse(data.text) as PendingPatch; if (patch.path !== selectedWorkspaceFile || typeof patch.content !== "string") throw new Error(); setPendingPatch(patch); setEntries(prev => [...prev, { id: `patch-${Date.now()}`, kind: "result", title: "Patch đang chờ xác nhận", text: patch.summary || `Đã tạo bản xem trước cho ${patch.path}. Chưa ghi vào file.`, time: "Vừa xong", meta: "Preview · Chưa áp dụng" }]); } catch { throw new Error("Model không trả patch JSON hợp lệ. File chưa bị thay đổi."); } } else setEntries(prev => [...prev, { id: `ai-${Date.now()}`, kind: "message", role: "ai", text: data.text, time: "Vừa xong" }]); })
       .catch(error => setEntries(prev => [...prev, { id: `error-${Date.now()}`, kind: "result", title: "Yêu cầu thất bại", text: error.message, time: "Vừa xong", meta: `${provider} · Lỗi` }]))
       .finally(() => { setSending(false); setClarifiedScope(""); setAttachments([]); setTimeout(() => timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: "smooth" }), 30); });
   };
@@ -182,15 +261,15 @@ export default function Home() {
   return <main className="shell">
     <aside className="projects">
       <div className="brand"><div className="brandmark">M</div><span>Minimum</span></div>
-      <button className="new-project"><Icon name="plus"/> Dự án mới</button>
+      <button className="new-project" onClick={()=>setNewProjectOpen(true)}><Icon name="plus"/> Dự án mới</button>
       <button className="provider-button" onClick={()=>setProvidersOpen(true)}>⌘ <span>{provider || "Kết nối model"}</span><b>{provider ? "✓" : "0"}</b></button>
       <p className="section-label">DỰ ÁN</p>
-      <nav>{projects.map((p, i) => <button key={p} className={i === 0 ? "project active" : "project"}><span className="project-dot">{p[0]}</span><span>{p}</span>{i === 0 && <span className="live-dot"/>}</button>)}</nav>
+      <nav>{projectList.map(project => <button key={project.id} onClick={()=>selectProject(project.id)} className={project.id === activeProjectId ? "project active" : "project"}><span className="project-dot">{project.name[0]}</span><span>{project.name}</span>{project.id === activeProjectId && <span className="live-dot"/>}</button>)}</nav>
       <div className="sidebar-bottom"><button><span>?</span> Trợ giúp</button><div className="profile"><div>HT</div><span><b>Huy Tran</b><small>Local workspace</small></span></div></div>
     </aside>
 
     <section className="workspace">
-      <header className="topbar"><div><span className="crumb">DỰ ÁN</span><h1>PDF Converter <span>Dữ liệu cục bộ</span></h1></div><button className="search-trigger" onClick={() => {setSearchOpen(true); setTimeout(()=>searchRef.current?.focus(), 20)}}><Icon name="search"/><span>Tìm trong dự án...</span><kbd>Ctrl K</kbd></button></header>
+      <header className="topbar"><div><span className="crumb">DỰ ÁN</span><h1>{activeProject?.name || "Dự án"} <span>{folderHandle ? folderHandle.name : "Chưa kết nối folder"}</span></h1></div><button className="search-trigger" onClick={() => {setSearchOpen(true); setTimeout(()=>searchRef.current?.focus(), 20)}}><Icon name="search"/><span>Tìm trong dự án...</span><kbd>Ctrl K</kbd></button></header>
       <div className="timeline" id="timeline" ref={timelineRef}>
         <div className="demo-notice"><b>Dữ liệu minh họa</b><span>Timeline bên dưới dùng để trình diễn giao diện, không phải kết quả xử lý thật.</span></div>
         <div className="day"><span>06 THÁNG 8</span></div>
@@ -204,12 +283,12 @@ export default function Home() {
         {draft.trim() && <div className="usage-plan"><div className="usage-plan-head"><span>USAGE PROFILE</span><b>{usagePlan.profile}</b><em>Risk: {usagePlan.risk}</em></div><div className="usage-grid"><div><small>ƯU TIÊN</small><b>{usagePlan.priority}</b></div><div><small>CÔNG CỤ</small><b>{usagePlan.tool}</b></div><div><small>KIỂM CHỨNG</small><b>{usagePlan.verification}</b></div><div><small>OUTPUT</small><b>{usagePlan.output}</b></div></div><p>✓ Fact cần nguồn · ✓ Suy luận phải gắn nhãn · ✓ Tự chọn tool trước khi chọn model <span>Phân tích cục bộ · 0 token</span></p></div>}
         {clarification && (clarification.needed ? <div className="clarify-card"><div className="clarify-head"><span>?</span><div><b>Cần làm rõ trước khi thực hiện</b><small>{clarification.reason} · Rule cục bộ · 0 token</small></div><em>Auto</em></div><p>Bạn muốn tiếp tục phần nào?</p><div className="clarify-options"><button onClick={()=>setClarifiedScope("Sửa căn chỉnh ô gộp sát lề phải")}>Căn chỉnh ô gộp <small>Đề xuất</small></button><button onClick={()=>setClarifiedScope("Sửa đường viền của bảng")}>Đường viền bảng</button><button onClick={()=>setClarifiedScope("Kiểm tra cả căn chỉnh và đường viền")}>Cả hai</button></div><div className="kept-constraint">✓ Giữ nguyên ràng buộc: không sửa module OCR</div></div> : <div className="task-preview"><span>✓</span><p><b>Đã hiểu yêu cầu</b> {clarification.summary}</p><button onClick={()=>setClarifiedScope("")}>Chỉnh lại</button></div>)}
         {!provider ? <div className="connection-warning"><span>!</span><p><b>Chưa có model được kết nối</b> Hãy nhập API key để bắt đầu xử lý thật.</p><button onClick={()=>setProvidersOpen(true)}>Kết nối model</button></div> : <div className="connected-bar"><span>✓</span><p><b>{provider}</b> · {model}</p><button onClick={disconnectProvider}>Ngắt kết nối</button></div>}
-        <div className="execution-mode"><div><b>Chat & phân tích</b><span>Đọc file đính kèm và trả kết quả trong timeline</span></div><button disabled>Thực thi trong project · Cần Local Companion</button></div>{attachments.length>0&&<div className="attachment-list">{attachments.map(file=><span key={file.name}>↗ {file.name} <small>{Math.ceil(file.size/1024)} KB</small><button onClick={()=>setAttachments(prev=>prev.filter(item=>item.name!==file.name))}>×</button></span>)}</div>}{uploadError&&<div className="upload-error">{uploadError}</div>}<div className="composer"><textarea aria-label="Nhập yêu cầu" value={draft} onChange={e=>{setDraft(e.target.value);setClarifiedScope("")}} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}}} placeholder={provider ? "Nêu mục tiêu hoặc đính kèm file để phân tích..." : "Kết nối model trước khi gửi yêu cầu..."}/><div className="composer-actions"><div><select aria-label="Chọn hãng hoặc model" value={provider || ""} disabled><option>{provider ? `${provider} · ${model}` : "Chưa có model"}</option></select><input ref={fileRef} className="file-input" type="file" multiple accept=".txt,.md,.csv,.json,.js,.jsx,.ts,.tsx,.py,.html,.css,.xml,.yaml,.yml,.sql,.log,text/*" onChange={e=>attachFiles(e.target.files)}/><button onClick={()=>fileRef.current?.click()}>＋ Đính kèm file</button><button className="context-on"><i/> Context tự động</button></div><button className="send" aria-label="Gửi" onClick={sendMessage} disabled={!provider || (!draft.trim()&&!attachments.length) || sending || Boolean(clarification?.needed)}><Icon name="send"/></button></div></div><p>Clarification: Auto · File chỉ dùng cho request hiện tại · Chưa có quyền sửa project trên máy</p>
+        <div className="execution-mode"><div><b>{executionMode === "execute" ? "Thực thi có xác nhận" : "Chat & phân tích"}</b><span>{executionMode === "execute" ? `Tạo patch cho ${selectedWorkspaceFile || "file đã chọn"}; chỉ ghi sau khi bạn duyệt` : "Đọc file đính kèm và trả kết quả trong timeline"}</span></div><button disabled={!folderHandle} onClick={()=>setExecutionMode(mode=>mode === "analyze" ? "execute" : "analyze")}>{executionMode === "execute" ? "Chuyển sang Analyze" : folderHandle ? "Bật Execute" : "Kết nối folder để Execute"}</button></div>{pendingPatch&&<div className="patch-preview"><div><b>Patch chờ duyệt · {pendingPatch.path}</b><span>{pendingPatch.summary}</span></div><button onClick={()=>setPendingPatch(null)}>Hủy</button><button className="apply" onClick={applyPendingPatch}>Áp dụng vào file</button></div>}{attachments.length>0&&<div className="attachment-list">{attachments.map(file=><span key={file.name}>↗ {file.name} <small>{Math.ceil(file.size/1024)} KB</small><button onClick={()=>setAttachments(prev=>prev.filter(item=>item.name!==file.name))}>×</button></span>)}</div>}{uploadError&&<div className="upload-error">{uploadError}</div>}<div className="composer"><textarea aria-label="Nhập yêu cầu" value={draft} onChange={e=>{setDraft(e.target.value);setClarifiedScope("")}} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}}} placeholder={provider ? "Nêu mục tiêu hoặc đính kèm file để phân tích..." : "Kết nối model trước khi gửi yêu cầu..."}/><div className="composer-actions"><div><select aria-label="Chọn hãng hoặc model" value={provider || ""} disabled><option>{provider ? `${provider} · ${model}` : "Chưa có model"}</option></select><input ref={fileRef} className="file-input" type="file" multiple accept=".txt,.md,.csv,.json,.js,.jsx,.ts,.tsx,.py,.html,.css,.xml,.yaml,.yml,.sql,.log,text/*" onChange={e=>attachFiles(e.target.files)}/><button onClick={()=>fileRef.current?.click()}>＋ Đính kèm file</button><button className="context-on"><i/> Context tự động</button></div><button className="send" aria-label="Gửi" onClick={sendMessage} disabled={!provider || (!draft.trim()&&!attachments.length) || sending || Boolean(clarification?.needed)}><Icon name="send"/></button></div></div><p>Clarification: Auto · Execute luôn yêu cầu duyệt trước khi ghi file</p>
       </div>
     </section>
 
     <aside className="brain"><div className="brain-title"><Icon name="brain"/><div><span>BỘ NHỚ DỰ ÁN</span><b>Đang đồng bộ</b></div><i/></div><div className="brain-tabs"><button className="active">Hiện tại</button><button>Bộ nhớ</button><button>Sử dụng</button></div>
-      <section><label>CẤU HÌNH SỬ DỤNG AI</label><div className="state-card"><span className="pulse"/><div><b>{draft.trim() ? usagePlan.profile : "Auto profile"}</b><small>{draft.trim() ? usagePlan.tool : "Nêu mục tiêu, hệ thống tự cấu hình"}</small></div></div></section>
+      <section><label>WORKSPACE FOLDER</label><button className="folder-connect" onClick={chooseFolder}>{folderHandle ? `✓ ${folderHandle.name}` : "＋ Chọn folder trên máy"}</button>{workspaceError&&<p className="workspace-error">{workspaceError}</p>}<div className="workspace-files">{workspaceFiles.slice(0,40).map(file=><button key={file.path} className={selectedWorkspaceFile===file.path?"active":""} onClick={()=>openWorkspaceFile(file)}>↗ {file.path}</button>)}{folderHandle&&!workspaceFiles.length&&<small>Không tìm thấy file text/code được hỗ trợ.</small>}</div></section><section><label>CẤU HÌNH SỬ DỤNG AI</label><div className="state-card"><span className="pulse"/><div><b>{draft.trim() ? usagePlan.profile : "Auto profile"}</b><small>{draft.trim() ? usagePlan.tool : "Nêu mục tiêu, hệ thống tự cấu hình"}</small></div></div></section>
       <section><div className="section-row"><label>RÀNG BUỘC ĐANG ÁP DỤNG</label><span>2</span></div><div className="memory-item"><i>!</i><p>Không sửa module OCR khi xử lý bảng DOCX.</p></div><div className="memory-item"><i>⌁</i><p>Phần tính toán hình học phải tách khỏi OCR.</p></div></section>
       <section><div className="section-row"><label>CONTEXT CỦA YÊU CẦU NÀY</label><button>Kiểm tra</button></div><div className="metric"><span>Context đã chọn</span><b>4,218 <small>token</small></b></div><div className="bar"><i/></div><div className="saved"><span>Context đã tránh</span><b>83.8%</b></div><div className="sources"><span>2 quyết định</span><span>3 symbol</span><span>1 kiểm thử</span></div></section>
       <section><label>QUYẾT ĐỊNH GẦN ĐÂY</label><button className="decision-link"><i/> Use MinerU for layout detection <Icon name="chevron"/></button></section>
@@ -228,5 +307,6 @@ export default function Home() {
       ["DeepSeek", "DeepSeek Chat & Reasoner", "API key"], ["Qwen", "Alibaba Cloud Model Studio", "DashScope key"],
       ["Kimi", "Moonshot AI models", "API key"], ["OpenRouter", "Nhiều hãng qua một key", "Khuyến nghị"]
     ].map(([name,desc,method])=><div className={`provider-row ${credentialProvider===name?"chosen":""}`} key={name}><span className="provider-logo">{name[0]}</span><div><b>{name}</b><small>{desc} · {method}</small></div><button onClick={()=>{setCredentialProvider(name);setApiKey("");setModel("");setAvailableModels([]);setConnectionError("")}}>{provider===name?"Kết nối lại":"Chọn"}</button></div>)}<div className="provider-row local-row"><span className="provider-logo">9</span><div><b>9Router · Local gateway</b><small>Quản lý key, subscription và fallback tại localhost:20128</small></div><button disabled>Cần Companion</button></div>{providerGuide && <div className="key-guide"><div><b>Lấy API key {credentialProvider} trong 3 bước</b><ol><li>Mở trang chính thức bằng nút bên dưới và đăng nhập.</li><li>Tạo key mới, đặt tên “Minimum”, rồi sao chép.</li><li>Quay lại đây, dán key và nhấn “Kiểm tra key”.</li></ol></div><div className="key-guide-actions"><a href={providerGuide.keyUrl} target="_blank" rel="noreferrer">{providerGuide.keyLabel || "Mở trang API key"} ↗</a><a href={providerGuide.billingUrl} target="_blank" rel="noreferrer">Billing / Credit ↗</a></div><small>{providerGuide.note} Không gửi key qua chat hoặc lưu vào project.</small></div>}{credentialProvider && <div className="credential-form"><label>API key của {credentialProvider}</label><div><input type="password" value={apiKey} onChange={e=>{setApiKey(e.target.value);setAvailableModels([])}} placeholder="Dán API key tại đây" autoComplete="off"/><button onClick={connectProvider} disabled={!apiKey.trim()||connecting}>{connecting?"Đang kiểm tra...":"Kiểm tra key"}</button></div><small>Key chỉ tồn tại trong phiên tab này; không lưu vào project hay database.</small>{availableModels.length>0&&<div className="model-picker"><label>Chọn model</label><select value={model} onChange={e=>setModel(e.target.value)}>{availableModels.map(item=><option value={item} key={item}>{item}</option>)}</select><button onClick={saveProvider}>Lưu & kết nối</button></div>}{connectionError&&<p>{connectionError}</p>}</div>}</div><footer><span>OpenRouter chạy ngay; 9Router cần Local Companion để website gọi máy bạn an toàn.</span><button onClick={()=>setProvidersOpen(false)}>Đóng</button></footer></div></div>}
+    {newProjectOpen&&<div className="overlay" onMouseDown={e=>e.target===e.currentTarget&&setNewProjectOpen(false)}><div className="new-project-modal"><h2>Tạo dự án mới</h2><p>Mỗi dự án có lịch sử và folder làm việc riêng trên thiết bị này.</p><label>Tên dự án</label><input autoFocus value={newProjectName} onChange={e=>setNewProjectName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&createProject()} placeholder="Ví dụ: Research Paper"/><div><button onClick={()=>setNewProjectOpen(false)}>Hủy</button><button className="primary" onClick={createProject} disabled={!newProjectName.trim()}>Tạo dự án</button></div></div></div>}
   </main>;
 }
