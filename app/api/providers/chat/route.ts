@@ -4,13 +4,20 @@ const json = (body: unknown, status = 200) => Response.json(body, { status });
 
 export async function POST(request: Request) {
   try {
-    const { provider, apiKey, model, prompt } = await request.json() as { provider?: Provider; apiKey?: string; model?: string; prompt?: string };
+    const { provider, apiKey, model, prompt, attachments = [] } = await request.json() as { provider?: Provider; apiKey?: string; model?: string; prompt?: string; attachments?: Array<{ name: string; dataUrl: string; mime: string }> };
     if (!provider || !apiKey || !model || !prompt?.trim()) return json({ error: "Thiếu thông tin để gửi yêu cầu." }, 400);
+    if (attachments.length && provider !== "OpenRouter") return json({ error: "PDF và ảnh hiện được gửi trực tiếp qua OpenRouter. Hãy chọn OpenRouter hoặc dùng file text với provider này." }, 400);
     let response: Response;
     if (provider === "OpenAI") response = await fetch("https://api.openai.com/v1/responses", { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model, input: prompt.trim(), max_output_tokens: 1200 }) });
     else if (provider === "Anthropic") response = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "Content-Type": "application/json" }, body: JSON.stringify({ model, max_tokens: 1200, messages: [{ role: "user", content: prompt.trim() }] }) });
     else if (provider === "Google") response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt.trim() }] }], generationConfig: { maxOutputTokens: 1200 } }) });
-    else response = await fetch(`${compatibleBases[provider]}/chat/completions`, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", ...(provider === "OpenRouter" ? { "HTTP-Referer": "https://minimum-ai-workspace.huy-hanoietrip.chatgpt.site", "X-OpenRouter-Title": "Minimum AI Workspace" } : {}) }, body: JSON.stringify({ model, messages: [{ role: "user", content: prompt.trim() }], max_tokens: 1200 }) });
+    else {
+      const content = provider === "OpenRouter" && attachments.length ? [
+        { type: "text", text: prompt.trim() },
+        ...attachments.map(file => file.mime.startsWith("image/") ? { type: "image_url", image_url: { url: file.dataUrl } } : { type: "file", file: { filename: file.name, file_data: file.dataUrl } }),
+      ] : prompt.trim();
+      response = await fetch(`${compatibleBases[provider]}/chat/completions`, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", ...(provider === "OpenRouter" ? { "HTTP-Referer": "https://minimum-ai-workspace.huy-hanoietrip.chatgpt.site", "X-OpenRouter-Title": "Minimum AI Workspace" } : {}) }, body: JSON.stringify({ model, messages: [{ role: "user", content }], max_tokens: 1200 }) });
+    }
 
     const data = await response.json() as Record<string, any>;
     if (!response.ok) return json({ error: data?.error?.message || "Provider từ chối yêu cầu." }, response.status);

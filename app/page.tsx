@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 type Kind = "message" | "task" | "decision" | "result" | "file";
 type Entry = { id: string; kind: Kind; title?: string; text: string; time: string; meta?: string; role?: "user" | "ai" };
-type Attachment = { name: string; size: number; text: string };
+type Attachment = { name: string; size: number; text?: string; dataUrl?: string; mime?: string };
 type LocalProject = { id: string; name: string; folderName?: string; entries: Entry[] };
 type WorkspaceFile = { path: string; handle: FileSystemFileHandle };
 type PendingPatch = { path: string; content: string; summary: string };
@@ -25,7 +25,7 @@ const initialEntries: Entry[] = [
 ];
 
 const seedProjects: LocalProject[] = [
-  { id: "pdf", name: "PDF Converter", entries: initialEntries },
+  { id: "pdf", name: "PDF Converter", entries: initialEntries.filter(entry => entry.id === "security-policy") },
   { id: "finance", name: "Financial Analyzer", entries: [] },
   { id: "automation", name: "Automation Tool", entries: [] },
 ];
@@ -103,6 +103,7 @@ export default function Home() {
   const [pendingPatch, setPendingPatch] = useState<PendingPatch | null>(null);
   const [workspaceError, setWorkspaceError] = useState("");
   const [lastRedactions, setLastRedactions] = useState(0);
+  const [interviewAnswers, setInterviewAnswers] = useState<Record<string,string>>({});
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [uploadError, setUploadError] = useState("");
@@ -138,16 +139,24 @@ export default function Home() {
     if (ambiguous && !clarifiedScope) return { needed: true, reason: "Chưa xác định chính xác phạm vi cần xử lý." };
     return { needed: false, summary: clarifiedScope || (q.includes("audit") ? "Kiểm tra dự án và báo cáo vấn đề" : "Thực hiện yêu cầu theo nội dung đã nhập") };
   }, [draft, clarifiedScope]);
+  const interviewQuestions = useMemo(() => {
+    const q = draft.toLowerCase();
+    if (!/tự động|automation|workflow/.test(q)) return [];
+    const questions = [];
+    if (!/gmail|outlook|imap|email nguồn/.test(q)) questions.push({ id: "source", label: "Nguồn email", ask: "Email được lấy từ Gmail, Outlook hay hệ thống nào?" });
+    if (!/folder|thư mục/.test(q) || !/[a-z]:\\|onedrive|google drive|sharepoint/i.test(draft)) questions.push({ id: "destination", label: "Nơi lưu", ask: "Folder đích nằm trên máy, OneDrive, Google Drive hay nơi khác?" });
+    if (!/mỗi |hàng |khi có|theo giờ|ngày|tuần/.test(q)) questions.push({ id: "schedule", label: "Thời điểm chạy", ask: "Chạy khi có email mới hay theo lịch nào?" });
+    if (!/pdf|đính kèm|nội dung|tiêu đề|người gửi/.test(q)) questions.push({ id: "scope", label: "Dữ liệu cần copy", ask: "Copy file đính kèm, nội dung email hay toàn bộ email?" });
+    return questions;
+  }, [draft]);
   const usagePlan = useMemo(() => buildUsagePlan(draft), [draft]);
   const providerGuide = providerGuides[credentialProvider];
   const activeProject = projectList.find(project => project.id === activeProjectId) || projectList[0];
 
   useEffect(() => {
     const savedProjects = localStorage.getItem("minimum-projects");
-    if (savedProjects) { try { const parsed = (JSON.parse(savedProjects) as LocalProject[]).map(project => ({ ...project, entries: project.entries.some(entry => entry.id === "security-policy") ? project.entries : [...project.entries, initialEntries.find(entry => entry.id === "security-policy")!] })); setProjectList(parsed); setActiveProjectId(parsed[0]?.id || "pdf"); setEntries(parsed[0]?.entries || []); } catch {} }
-    const savedProvider = sessionStorage.getItem("minimum-provider") || "";
-    const savedModel = sessionStorage.getItem("minimum-model") || "";
-    if (savedProvider && savedModel) { setProvider(savedProvider); setModel(savedModel); }
+    if (savedProjects) { try { const demoIds = new Set(["m1","d1","t1","m2","d2","t2","f1","r1","m3","t3","m4"]); const parsed = (JSON.parse(savedProjects) as LocalProject[]).map(project => { const realEntries = project.entries.filter(entry => !demoIds.has(entry.id)); return { ...project, entries: realEntries.some(entry => entry.id === "security-policy") ? realEntries : [...realEntries, initialEntries.find(entry => entry.id === "security-policy")!] }; }); setProjectList(parsed); setActiveProjectId(parsed[0]?.id || "pdf"); setEntries(parsed[0]?.entries || []); } catch {} }
+    sessionStorage.removeItem("minimum-provider"); sessionStorage.removeItem("minimum-model"); sessionStorage.removeItem("minimum-api-key");
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setSearchOpen(true); setTimeout(() => searchRef.current?.focus(), 20); }
       if (e.key === "Escape") setSearchOpen(false);
@@ -221,7 +230,7 @@ export default function Home() {
   const sendMessage = () => {
     const text = draft.trim();
     if ((!text && !attachments.length) || !provider) { setProvidersOpen(true); return; }
-    if (clarification?.needed) return;
+    if (clarification?.needed || interviewQuestions.some(question => !interviewAnswers[question.id]?.trim())) return;
     const userEntry: Entry = { id: `user-${Date.now()}`, kind: "message", role: "user", text, time: "Vừa xong" };
     setEntries(prev => [...prev, userEntry]); setDraft(""); setSending(true);
     setTimeout(() => timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: "smooth" }), 30);
@@ -229,24 +238,27 @@ export default function Home() {
     const executionPolicy = executionMode === "execute" ? `EXECUTION MODE: PATCH_PREVIEW\nReturn ONLY valid JSON: {"path":"${selectedWorkspaceFile}","content":"complete updated file content","summary":"short change summary"}. Never use markdown fences. Modify only the supplied file.` : "EXECUTION MODE: ANALYZE_ONLY (do not claim files were changed)";
     const policy = `${executionPolicy}\nUSAGE PROFILE: ${usagePlan.profile}\nPRIORITY: ${usagePlan.priority}\nTOOL STRATEGY: ${usagePlan.tool}\nVERIFICATION: ${usagePlan.verification}\nSOURCE POLICY: ${usagePlan.source}\nINFERENCE POLICY: ${usagePlan.inference}\nOUTPUT CONTRACT: ${usagePlan.output}`;
     let redactions = 0;
-    const files = attachments.map(file => { const safe = redactSecrets(file.text); redactions += safe.count; return `\n\n--- ATTACHED FILE: ${file.name} ---\n${safe.text}`; }).join("");
+    const files = attachments.filter(file=>file.text!==undefined).map(file => { const safe = redactSecrets(file.text || ""); redactions += safe.count; return `\n\n--- ATTACHED FILE: ${file.name} ---\n${safe.text}`; }).join("");
+    const binaryAttachments = attachments.filter(file=>file.dataUrl).map(file=>({ name:file.name, dataUrl:file.dataUrl!, mime:file.mime! }));
     const safeWorkspace = redactSecrets(workspaceFileText); redactions += safeWorkspace.count; setLastRedactions(redactions);
     const workspaceContext = executionMode === "execute" ? `\n\n--- WORKSPACE FILE: ${selectedWorkspaceFile} ---\n${safeWorkspace.text}` : "";
-    fetch("/api/providers/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider, apiKey, model, prompt: `${policy}\n\nUSER GOAL:\n${text || "Phân tích các file đính kèm."}${clarifiedScope ? `\n\nPhạm vi đã làm rõ: ${clarifiedScope}` : ""}${files}${workspaceContext}` }) })
+    const interview = interviewQuestions.length ? `\n\nCLARIFICATION ANSWERS:\n${interviewQuestions.map(question=>`${question.label}: ${interviewAnswers[question.id]}`).join("\n")}` : "";
+    fetch("/api/providers/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider, apiKey, model, attachments: binaryAttachments, prompt: `${policy}\n\nUSER GOAL:\n${text || "Phân tích các file đính kèm."}${clarifiedScope ? `\n\nPhạm vi đã làm rõ: ${clarifiedScope}` : ""}${interview}${files}${workspaceContext}` }) })
       .then(async response => { const data = await response.json(); if (!response.ok) throw new Error(data.error || "Không thể xử lý yêu cầu."); return data; })
       .then(data => { if (executionMode === "execute") { try { const patch = JSON.parse(data.text) as PendingPatch; if (patch.path !== selectedWorkspaceFile || typeof patch.content !== "string") throw new Error(); setPendingPatch(patch); setEntries(prev => [...prev, { id: `patch-${Date.now()}`, kind: "result", title: "Patch đang chờ xác nhận", text: patch.summary || `Đã tạo bản xem trước cho ${patch.path}. Chưa ghi vào file.`, time: "Vừa xong", meta: "Preview · Chưa áp dụng" }]); } catch { throw new Error("Model không trả patch JSON hợp lệ. File chưa bị thay đổi."); } } else setEntries(prev => [...prev, { id: `ai-${Date.now()}`, kind: "message", role: "ai", text: data.text, time: "Vừa xong" }]); })
       .catch(error => setEntries(prev => [...prev, { id: `error-${Date.now()}`, kind: "result", title: "Yêu cầu thất bại", text: error.message, time: "Vừa xong", meta: `${provider} · Lỗi` }]))
-      .finally(() => { setSending(false); setClarifiedScope(""); setAttachments([]); setTimeout(() => timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: "smooth" }), 30); });
+      .finally(() => { setSending(false); setClarifiedScope(""); setInterviewAnswers({}); setAttachments([]); setTimeout(() => timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: "smooth" }), 30); });
   };
 
   const attachFiles = async (list: FileList | null) => {
     if (!list) return;
     setUploadError("");
-    const allowed = /\.(txt|md|csv|json|js|jsx|ts|tsx|py|html|css|xml|yaml|yml|sql|log)$/i;
+    const textAllowed = /\.(txt|md|csv|json|js|jsx|ts|tsx|py|html|css|xml|yaml|yml|sql|log)$/i;
+    const binaryAllowed = /\.(pdf|png|jpe?g|webp|gif)$/i;
     const picked = Array.from(list).slice(0, 5);
-    const invalid = picked.find(file => !allowed.test(file.name) || file.size > 2_000_000);
-    if (invalid) { setUploadError(`Không thể đọc ${invalid.name}. Hiện hỗ trợ file text/code tối đa 2 MB.`); return; }
-    const loaded = await Promise.all(picked.map(async file => ({ name: file.name, size: file.size, text: await file.text() })));
+    const invalid = picked.find(file => (!textAllowed.test(file.name) && !binaryAllowed.test(file.name)) || file.size > (binaryAllowed.test(file.name) ? 10_000_000 : 5_000_000));
+    if (invalid) { setUploadError(`Không thể đọc ${invalid.name}. Text/code tối đa 5 MB; PDF/ảnh tối đa 10 MB.`); return; }
+    const loaded = await Promise.all(picked.map(async file => binaryAllowed.test(file.name) ? await new Promise<Attachment>((resolve,reject)=>{ const reader=new FileReader(); reader.onload=()=>resolve({name:file.name,size:file.size,dataUrl:String(reader.result),mime:file.type||"application/octet-stream"}); reader.onerror=()=>reject(reader.error); reader.readAsDataURL(file); }) : ({ name: file.name, size: file.size, text: await file.text(), mime:file.type||"text/plain" })));
     setAttachments(prev => [...prev, ...loaded].slice(0, 5));
     if (fileRef.current) fileRef.current.value = "";
   };
@@ -288,8 +300,7 @@ export default function Home() {
     <section className="workspace">
       <header className="topbar"><div><span className="crumb">DỰ ÁN</span><h1>{activeProject?.name || "Dự án"} <span>{folderHandle ? folderHandle.name : "Chưa kết nối folder"}</span></h1></div><button className="search-trigger" onClick={() => {setSearchOpen(true); setTimeout(()=>searchRef.current?.focus(), 20)}}><Icon name="search"/><span>Tìm trong dự án...</span><kbd>Ctrl K</kbd></button></header>
       <div className="timeline" id="timeline" ref={timelineRef}>
-        <div className="demo-notice"><b>Dữ liệu minh họa</b><span>Timeline bên dưới dùng để trình diễn giao diện, không phải kết quả xử lý thật.</span></div>
-        <div className="day"><span>06 THÁNG 8</span></div>
+        {!entries.length&&<div className="empty-project"><b>Dự án chưa có hoạt động</b><span>Nêu mục tiêu, đính kèm tài liệu hoặc kết nối folder để bắt đầu.</span></div>}
         {entries.map((e, i) => <div key={e.id} id={e.id} className={`entry ${e.kind} ${e.role || ""} ${flash === e.id ? "flash" : ""}`}>
           {e.kind === "message" ? <>
             <div className="avatar">{e.role === "user" ? "HT" : "M"}</div><div className="message-body"><div className="message-head"><b>{e.role === "user" ? "Bạn" : "Minimum"}</b><time>{e.time}</time></div><p>{e.text}</p></div>
@@ -297,10 +308,11 @@ export default function Home() {
         </div>)}
       </div>
       <div className="composer-wrap">
+        {interviewQuestions.length>0&&<div className="interview-card"><div className="interview-head"><span>?</span><div><b>Cần thêm thông tin để lập kế hoạch đúng</b><small>Đây không phải lỗi · Trả lời ngắn từng câu rồi gửi</small></div><em>{interviewQuestions.filter(question=>interviewAnswers[question.id]?.trim()).length}/{interviewQuestions.length}</em></div><div className="interview-table">{interviewQuestions.map((question,index)=><label key={question.id}><span><b>{index+1}. {question.label}</b><small>{question.ask}</small></span><input value={interviewAnswers[question.id]||""} onChange={e=>setInterviewAnswers(prev=>({...prev,[question.id]:e.target.value}))} placeholder="Nhập câu trả lời..."/></label>)}</div></div>}
         {draft.trim() && <div className="usage-plan"><div className="usage-plan-head"><span>USAGE PROFILE</span><b>{usagePlan.profile}</b><em>Risk: {usagePlan.risk}</em></div><div className="usage-grid"><div><small>ƯU TIÊN</small><b>{usagePlan.priority}</b></div><div><small>CÔNG CỤ</small><b>{usagePlan.tool}</b></div><div><small>KIỂM CHỨNG</small><b>{usagePlan.verification}</b></div><div><small>OUTPUT</small><b>{usagePlan.output}</b></div></div><p>✓ Fact cần nguồn · ✓ Suy luận phải gắn nhãn · ✓ Tự chọn tool trước khi chọn model <span>Phân tích cục bộ · 0 token</span></p></div>}
         {clarification && (clarification.needed ? <div className="clarify-card"><div className="clarify-head"><span>?</span><div><b>Cần làm rõ trước khi thực hiện</b><small>{clarification.reason} · Rule cục bộ · 0 token</small></div><em>Auto</em></div><p>Bạn muốn tiếp tục phần nào?</p><div className="clarify-options"><button onClick={()=>setClarifiedScope("Sửa căn chỉnh ô gộp sát lề phải")}>Căn chỉnh ô gộp <small>Đề xuất</small></button><button onClick={()=>setClarifiedScope("Sửa đường viền của bảng")}>Đường viền bảng</button><button onClick={()=>setClarifiedScope("Kiểm tra cả căn chỉnh và đường viền")}>Cả hai</button></div><div className="kept-constraint">✓ Giữ nguyên ràng buộc: không sửa module OCR</div></div> : <div className="task-preview"><span>✓</span><p><b>Đã hiểu yêu cầu</b> {clarification.summary}</p><button onClick={()=>setClarifiedScope("")}>Chỉnh lại</button></div>)}
         {!provider ? <div className="connection-warning"><span>!</span><p><b>Chưa có model được kết nối</b> Hãy nhập API key để bắt đầu xử lý thật.</p><button onClick={()=>setProvidersOpen(true)}>Kết nối model</button></div> : <div className="connected-bar"><span>✓</span><p><b>{provider}</b> · {model}</p><button onClick={disconnectProvider}>Ngắt kết nối</button></div>}
-        <div className="execution-mode"><div><b>{executionMode === "execute" ? "Thực thi có xác nhận" : "Chat & phân tích"}</b><span>{executionMode === "execute" ? `Tạo patch cho ${selectedWorkspaceFile || "file đã chọn"}; chỉ ghi sau khi bạn duyệt` : "Đọc file đính kèm và trả kết quả trong timeline"}</span></div><button disabled={!folderHandle} onClick={()=>setExecutionMode(mode=>mode === "analyze" ? "execute" : "analyze")}>{executionMode === "execute" ? "Chuyển sang Analyze" : folderHandle ? "Bật Execute" : "Kết nối folder để Execute"}</button></div>{pendingPatch&&<div className="patch-preview"><div><b>Patch chờ duyệt · {pendingPatch.path}</b><span>{pendingPatch.summary}</span></div><button onClick={()=>setPendingPatch(null)}>Hủy</button><button className="apply" onClick={applyPendingPatch}>Áp dụng vào file</button></div>}{attachments.length>0&&<div className="attachment-list">{attachments.map(file=><span key={file.name}>↗ {file.name} <small>{Math.ceil(file.size/1024)} KB</small><button onClick={()=>setAttachments(prev=>prev.filter(item=>item.name!==file.name))}>×</button></span>)}</div>}{uploadError&&<div className="upload-error">{uploadError}</div>}<div className="composer"><textarea aria-label="Nhập yêu cầu" value={draft} onChange={e=>{setDraft(e.target.value);setClarifiedScope("")}} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}}} placeholder={provider ? "Nêu mục tiêu hoặc đính kèm file để phân tích..." : "Kết nối model trước khi gửi yêu cầu..."}/><div className="composer-actions"><div><select aria-label="Chọn hãng hoặc model" value={provider || ""} disabled><option>{provider ? `${provider} · ${model}` : "Chưa có model"}</option></select><input ref={fileRef} className="file-input" type="file" multiple accept=".txt,.md,.csv,.json,.js,.jsx,.ts,.tsx,.py,.html,.css,.xml,.yaml,.yml,.sql,.log,text/*" onChange={e=>attachFiles(e.target.files)}/><button onClick={()=>fileRef.current?.click()}>＋ Đính kèm file</button><button className="context-on"><i/> Context tự động</button></div><button className="send" aria-label="Gửi" onClick={sendMessage} disabled={!provider || (!draft.trim()&&!attachments.length) || sending || Boolean(clarification?.needed)}><Icon name="send"/></button></div></div><p>Clarification: Auto · Execute luôn yêu cầu duyệt trước khi ghi file</p>
+        <div className="execution-mode"><div><b>{executionMode === "execute" ? "Thực thi có xác nhận" : "Chat & phân tích"}</b><span>{executionMode === "execute" ? `Tạo patch cho ${selectedWorkspaceFile || "file đã chọn"}; chỉ ghi sau khi bạn duyệt` : "Đọc file đính kèm và trả kết quả trong timeline"}</span></div><button disabled={!folderHandle} onClick={()=>setExecutionMode(mode=>mode === "analyze" ? "execute" : "analyze")}>{executionMode === "execute" ? "Chuyển sang Analyze" : folderHandle ? "Bật Execute" : "Kết nối folder để Execute"}</button></div>{pendingPatch&&<div className="patch-preview"><div><b>Patch chờ duyệt · {pendingPatch.path}</b><span>{pendingPatch.summary}</span></div><button onClick={()=>setPendingPatch(null)}>Hủy</button><button className="apply" onClick={applyPendingPatch}>Áp dụng vào file</button></div>}{attachments.length>0&&<div className="attachment-list">{attachments.map(file=><span key={file.name}>↗ {file.name} <small>{Math.ceil(file.size/1024)} KB</small><button onClick={()=>setAttachments(prev=>prev.filter(item=>item.name!==file.name))}>×</button></span>)}</div>}{uploadError&&<div className="upload-error">{uploadError}</div>}<div className="composer"><textarea aria-label="Nhập yêu cầu" value={draft} onChange={e=>{setDraft(e.target.value);setClarifiedScope("")}} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}}} placeholder={provider ? "Nêu mục tiêu hoặc đính kèm file để phân tích..." : "Kết nối model trước khi gửi yêu cầu..."}/><div className="composer-actions"><div><select aria-label="Chọn hãng hoặc model" value={provider || ""} disabled><option>{provider ? `${provider} · ${model}` : "Chưa có model"}</option></select><input ref={fileRef} className="file-input" type="file" multiple accept=".txt,.md,.csv,.json,.js,.jsx,.ts,.tsx,.py,.html,.css,.xml,.yaml,.yml,.sql,.log,.pdf,.png,.jpg,.jpeg,.webp,.gif,text/*,application/pdf,image/*" onChange={e=>attachFiles(e.target.files)}/><button onClick={()=>fileRef.current?.click()}>＋ Đính kèm file</button><button className="context-on"><i/> Context tự động</button></div><button className="send" aria-label="Gửi" onClick={sendMessage} disabled={!provider || (!draft.trim()&&!attachments.length) || sending || Boolean(clarification?.needed) || interviewQuestions.some(question=>!interviewAnswers[question.id]?.trim())}><Icon name="send"/></button></div></div><p>Clarification: Auto · PDF/ảnh tối đa 10 MB · Text/code tối đa 5 MB · Execute luôn cần duyệt</p>
       </div>
     </section>
 

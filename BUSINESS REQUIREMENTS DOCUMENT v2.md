@@ -189,6 +189,36 @@ Audit event
 - The UI clearly distinguishes “analyzed”, “patch prepared”, “write approved” and “write completed”.
 - No hidden full-history, full-folder or secret transmission is allowed.
 
+## 0.8 Document Intake and Clarification Interview
+
+- File support must follow the processing pipeline, not an arbitrary extension whitelist.
+- Text/code may be read locally and redacted before transmission.
+- PDF and image inputs use a provider-native file/vision pipeline when available.
+- DOCX, XLSX, PPTX and other structured formats require deterministic extraction before LLM use; the UI must never pretend they were parsed when no extractor exists.
+- Limits must be explained as safety/cost/provider constraints. MVP limits: text/code 5 MB per file; PDF/image 10 MB per file; maximum five files per request.
+- Large documents should use chunking, retrieval and progressive disclosure rather than injecting the entire file blindly.
+
+Missing information is not an execution failure. The system must transition to a **Clarification Interview** when required fields are absent.
+
+The interview must:
+
+- show a compact table of missing fields;
+- ask one concrete question per field;
+- explain why execution is paused;
+- preserve the user's original goal;
+- compile answers into TaskSpec;
+- enable execution only after required answers are complete;
+- avoid charging model tokens when local rules can identify the missing fields.
+
+Example for an email automation goal:
+
+| Required field | Question |
+|---|---|
+| Source | Gmail, Outlook, IMAP or another system? |
+| Destination | Local folder, OneDrive, Google Drive or SharePoint? |
+| Trigger | New email event or scheduled interval? |
+| Scope | Attachment, body, metadata or complete message? |
+
 ---
 
 # 1. PRODUCT VISION
