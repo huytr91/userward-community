@@ -136,6 +136,59 @@ Guardrail metrics:
 
 Token saved must never be optimized at the expense of truthfulness, reproducibility or task success.
 
+## 0.7 Security and Trust Architecture
+
+Security is a product capability and a routing constraint, not a settings-page afterthought.
+
+### Security principles
+
+1. **Local-first by default** — project files remain on the user device unless explicitly selected for a request.
+2. **Least privilege** — folder access is user-granted; execution is limited to selected files and approved operations.
+3. **No silent execution** — model output is always a proposal. File writes, terminal commands, network changes and destructive actions require an explicit approval gate.
+4. **Secrets never enter prompts** — detect and redact API keys, tokens, private keys, passwords and common credentials before external transmission.
+5. **Keys are ephemeral** — provider API keys are held in volatile tab memory only by default, never stored in project history, prompts, analytics or local project records.
+6. **Provider transparency** — disclose the model, execution provider, data path, logging/training policy and whether content leaves the device.
+7. **Path confinement** — file operations must resolve inside the user-approved workspace; reject traversal and arbitrary model-supplied paths.
+8. **Evidence-based status** — never claim a file was modified, command ran or test passed without a verified tool result.
+9. **Auditability** — record approvals, redactions, provider calls, file writes, failures and security-policy changes without recording secret values.
+10. **Safe failure** — malformed patches, permission loss, policy conflicts or unverifiable output must fail closed and leave source files unchanged.
+
+### Security gates
+
+```text
+User goal
+  ↓
+Data classification (public / internal / confidential / restricted)
+  ↓
+Secret and PII scan
+  ↓
+Provider/privacy compatibility check
+  ↓
+Minimum necessary context selection
+  ↓
+Outbound preview + redaction summary
+  ↓
+Model call
+  ↓
+Patch/command validation
+  ↓
+Explicit user approval
+  ↓
+Confined execution
+  ↓
+Audit event
+```
+
+### Security acceptance tests
+
+- A file containing an OpenAI, OpenRouter, Anthropic, Google, GitHub or generic bearer token is redacted before transmission.
+- A model cannot write a file other than the exact workspace file selected by the user.
+- A rejected or malformed patch causes zero filesystem changes.
+- Reloading the page removes provider API keys from memory.
+- Switching projects cannot expose another project's selected file or folder handle.
+- The UI clearly distinguishes “analyzed”, “patch prepared”, “write approved” and “write completed”.
+- No hidden full-history, full-folder or secret transmission is allowed.
+
 ---
 
 # 1. PRODUCT VISION

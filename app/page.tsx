@@ -21,6 +21,7 @@ const initialEntries: Entry[] = [
   { id: "m3", kind: "message", role: "user", text: "Table vẫn hơi lệch ở tài liệu có merged cell nằm sát lề phải. Sửa tiếp giúp mình.", time: "Today · 09:03" },
   { id: "t3", kind: "task", title: "Sửa ô gộp sát lề phải", text: "Đang kiểm tra sai số làm tròn khi chuyển đổi chiều rộng DOCX. Đã lấy 2 quyết định, 3 symbol và 1 kiểm thử liên quan.", time: "Hôm nay · 09:04", meta: "Công việc #31 · Đang chạy" },
   { id: "m4", kind: "message", role: "ai", text: "Mình đã cô lập lỗi trong phép đổi pixel sang twip. Constraint không sửa OCR đang được giữ nguyên.", time: "Today · 09:06" },
+  { id: "security-policy", kind: "decision", title: "Security baseline", text: "Local-first, quyền tối thiểu, tự động che secret trước khi gửi provider và mọi thay đổi file đều cần user xác nhận.", time: "Hôm nay", meta: "Bảo mật · Đã ghim" },
 ];
 
 const seedProjects: LocalProject[] = [
@@ -74,6 +75,20 @@ function buildUsagePlan(input: string) {
   return { profile: "General Work", risk: "Thấp", priority: "Phù hợp mục tiêu", tool: "LLM cân bằng chi phí", verification: "Kiểm tra tiêu chuẩn", source: "Yêu cầu nguồn khi có factual claim", inference: "Nêu rõ khi suy luận", output: "Ngắn gọn, đúng định dạng" };
 }
 
+function redactSecrets(input: string) {
+  const patterns = [
+    /sk-(?:or-v1-|ant-|proj-)?[A-Za-z0-9_-]{16,}/g,
+    /AIza[0-9A-Za-z_-]{30,}/g,
+    /gh[opusr]_[A-Za-z0-9]{20,}/g,
+    /(?:Bearer\s+)[A-Za-z0-9._-]{16,}/gi,
+    /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/g,
+    /((?:password|passwd|secret|api[_-]?key|access[_-]?token)\s*[:=]\s*)[^\s"']+/gi,
+  ];
+  let text = input; let count = 0;
+  for (const pattern of patterns) text = text.replace(pattern, match => { count += 1; const prefix = match.match(/^[^:=]+[:=]\s*/)?.[0] || ""; return `${prefix}[REDACTED_SECRET]`; });
+  return { text, count };
+}
+
 export default function Home() {
   const [entries, setEntries] = useState<Entry[]>(initialEntries);
   const [projectList, setProjectList] = useState<LocalProject[]>(seedProjects);
@@ -87,6 +102,7 @@ export default function Home() {
   const [executionMode, setExecutionMode] = useState<"analyze" | "execute">("analyze");
   const [pendingPatch, setPendingPatch] = useState<PendingPatch | null>(null);
   const [workspaceError, setWorkspaceError] = useState("");
+  const [lastRedactions, setLastRedactions] = useState(0);
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [uploadError, setUploadError] = useState("");
@@ -128,11 +144,10 @@ export default function Home() {
 
   useEffect(() => {
     const savedProjects = localStorage.getItem("minimum-projects");
-    if (savedProjects) { try { const parsed = JSON.parse(savedProjects) as LocalProject[]; setProjectList(parsed); setActiveProjectId(parsed[0]?.id || "pdf"); setEntries(parsed[0]?.entries || []); } catch {} }
+    if (savedProjects) { try { const parsed = (JSON.parse(savedProjects) as LocalProject[]).map(project => ({ ...project, entries: project.entries.some(entry => entry.id === "security-policy") ? project.entries : [...project.entries, initialEntries.find(entry => entry.id === "security-policy")!] })); setProjectList(parsed); setActiveProjectId(parsed[0]?.id || "pdf"); setEntries(parsed[0]?.entries || []); } catch {} }
     const savedProvider = sessionStorage.getItem("minimum-provider") || "";
     const savedModel = sessionStorage.getItem("minimum-model") || "";
-    const savedKey = sessionStorage.getItem("minimum-api-key") || "";
-    if (savedProvider && savedModel && savedKey) { setProvider(savedProvider); setModel(savedModel); setApiKey(savedKey); }
+    if (savedProvider && savedModel) { setProvider(savedProvider); setModel(savedModel); }
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setSearchOpen(true); setTimeout(() => searchRef.current?.focus(), 20); }
       if (e.key === "Escape") setSearchOpen(false);
@@ -213,8 +228,10 @@ export default function Home() {
     if (executionMode === "execute" && (!folderHandle || !selectedWorkspaceFile)) { setWorkspaceError("Hãy kết nối folder và chọn một file trước khi yêu cầu thực thi."); setSending(false); return; }
     const executionPolicy = executionMode === "execute" ? `EXECUTION MODE: PATCH_PREVIEW\nReturn ONLY valid JSON: {"path":"${selectedWorkspaceFile}","content":"complete updated file content","summary":"short change summary"}. Never use markdown fences. Modify only the supplied file.` : "EXECUTION MODE: ANALYZE_ONLY (do not claim files were changed)";
     const policy = `${executionPolicy}\nUSAGE PROFILE: ${usagePlan.profile}\nPRIORITY: ${usagePlan.priority}\nTOOL STRATEGY: ${usagePlan.tool}\nVERIFICATION: ${usagePlan.verification}\nSOURCE POLICY: ${usagePlan.source}\nINFERENCE POLICY: ${usagePlan.inference}\nOUTPUT CONTRACT: ${usagePlan.output}`;
-    const files = attachments.map(file => `\n\n--- ATTACHED FILE: ${file.name} ---\n${file.text}`).join("");
-    const workspaceContext = executionMode === "execute" ? `\n\n--- WORKSPACE FILE: ${selectedWorkspaceFile} ---\n${workspaceFileText}` : "";
+    let redactions = 0;
+    const files = attachments.map(file => { const safe = redactSecrets(file.text); redactions += safe.count; return `\n\n--- ATTACHED FILE: ${file.name} ---\n${safe.text}`; }).join("");
+    const safeWorkspace = redactSecrets(workspaceFileText); redactions += safeWorkspace.count; setLastRedactions(redactions);
+    const workspaceContext = executionMode === "execute" ? `\n\n--- WORKSPACE FILE: ${selectedWorkspaceFile} ---\n${safeWorkspace.text}` : "";
     fetch("/api/providers/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider, apiKey, model, prompt: `${policy}\n\nUSER GOAL:\n${text || "Phân tích các file đính kèm."}${clarifiedScope ? `\n\nPhạm vi đã làm rõ: ${clarifiedScope}` : ""}${files}${workspaceContext}` }) })
       .then(async response => { const data = await response.json(); if (!response.ok) throw new Error(data.error || "Không thể xử lý yêu cầu."); return data; })
       .then(data => { if (executionMode === "execute") { try { const patch = JSON.parse(data.text) as PendingPatch; if (patch.path !== selectedWorkspaceFile || typeof patch.content !== "string") throw new Error(); setPendingPatch(patch); setEntries(prev => [...prev, { id: `patch-${Date.now()}`, kind: "result", title: "Patch đang chờ xác nhận", text: patch.summary || `Đã tạo bản xem trước cho ${patch.path}. Chưa ghi vào file.`, time: "Vừa xong", meta: "Preview · Chưa áp dụng" }]); } catch { throw new Error("Model không trả patch JSON hợp lệ. File chưa bị thay đổi."); } } else setEntries(prev => [...prev, { id: `ai-${Date.now()}`, kind: "message", role: "ai", text: data.text, time: "Vừa xong" }]); })
@@ -249,7 +266,7 @@ export default function Home() {
   const saveProvider = () => {
     if (!credentialProvider || !apiKey.trim() || !model) return;
     setProvider(credentialProvider);
-    sessionStorage.setItem("minimum-provider", credentialProvider); sessionStorage.setItem("minimum-model", model); sessionStorage.setItem("minimum-api-key", apiKey);
+    sessionStorage.setItem("minimum-provider", credentialProvider); sessionStorage.setItem("minimum-model", model); sessionStorage.removeItem("minimum-api-key");
     setProvidersOpen(false); setCredentialProvider(""); setAvailableModels([]);
   };
 
@@ -288,7 +305,7 @@ export default function Home() {
     </section>
 
     <aside className="brain"><div className="brain-title"><Icon name="brain"/><div><span>BỘ NHỚ DỰ ÁN</span><b>Đang đồng bộ</b></div><i/></div><div className="brain-tabs"><button className="active">Hiện tại</button><button>Bộ nhớ</button><button>Sử dụng</button></div>
-      <section><label>WORKSPACE FOLDER</label><button className="folder-connect" onClick={chooseFolder}>{folderHandle ? `✓ ${folderHandle.name}` : "＋ Chọn folder trên máy"}</button>{workspaceError&&<p className="workspace-error">{workspaceError}</p>}<div className="workspace-files">{workspaceFiles.slice(0,40).map(file=><button key={file.path} className={selectedWorkspaceFile===file.path?"active":""} onClick={()=>openWorkspaceFile(file)}>↗ {file.path}</button>)}{folderHandle&&!workspaceFiles.length&&<small>Không tìm thấy file text/code được hỗ trợ.</small>}</div></section><section><label>CẤU HÌNH SỬ DỤNG AI</label><div className="state-card"><span className="pulse"/><div><b>{draft.trim() ? usagePlan.profile : "Auto profile"}</b><small>{draft.trim() ? usagePlan.tool : "Nêu mục tiêu, hệ thống tự cấu hình"}</small></div></div></section>
+      <section><label>SECURITY GATE</label><div className="security-status"><b>✓ Local-first protection</b><span>API key chỉ ở bộ nhớ tab</span><span>Secret tự động được che trước khi gửi</span><span>File chỉ ghi sau khi bạn xác nhận</span>{lastRedactions>0&&<em>Đã che {lastRedactions} secret trong request gần nhất</em>}</div></section><section><label>WORKSPACE FOLDER</label><button className="folder-connect" onClick={chooseFolder}>{folderHandle ? `✓ ${folderHandle.name}` : "＋ Chọn folder trên máy"}</button>{workspaceError&&<p className="workspace-error">{workspaceError}</p>}<div className="workspace-files">{workspaceFiles.slice(0,40).map(file=><button key={file.path} className={selectedWorkspaceFile===file.path?"active":""} onClick={()=>openWorkspaceFile(file)}>↗ {file.path}</button>)}{folderHandle&&!workspaceFiles.length&&<small>Không tìm thấy file text/code được hỗ trợ.</small>}</div></section><section><label>CẤU HÌNH SỬ DỤNG AI</label><div className="state-card"><span className="pulse"/><div><b>{draft.trim() ? usagePlan.profile : "Auto profile"}</b><small>{draft.trim() ? usagePlan.tool : "Nêu mục tiêu, hệ thống tự cấu hình"}</small></div></div></section>
       <section><div className="section-row"><label>RÀNG BUỘC ĐANG ÁP DỤNG</label><span>2</span></div><div className="memory-item"><i>!</i><p>Không sửa module OCR khi xử lý bảng DOCX.</p></div><div className="memory-item"><i>⌁</i><p>Phần tính toán hình học phải tách khỏi OCR.</p></div></section>
       <section><div className="section-row"><label>CONTEXT CỦA YÊU CẦU NÀY</label><button>Kiểm tra</button></div><div className="metric"><span>Context đã chọn</span><b>4,218 <small>token</small></b></div><div className="bar"><i/></div><div className="saved"><span>Context đã tránh</span><b>83.8%</b></div><div className="sources"><span>2 quyết định</span><span>3 symbol</span><span>1 kiểm thử</span></div></section>
       <section><label>QUYẾT ĐỊNH GẦN ĐÂY</label><button className="decision-link"><i/> Use MinerU for layout detection <Icon name="chevron"/></button></section>
