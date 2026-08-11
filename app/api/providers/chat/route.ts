@@ -17,7 +17,7 @@ export async function POST(request: Request) {
         { type: "text", text: prompt.trim() },
         ...attachments.map(file => file.mime.startsWith("image/") ? { type: "image_url", image_url: { url: file.dataUrl } } : { type: "file", file: { filename: file.name, file_data: file.dataUrl } }),
       ] : prompt.trim();
-      response = await fetch(`${compatibleBases[provider]}/chat/completions`, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", ...(provider === "OpenRouter" ? { "HTTP-Referer": "https://minimum-ai-workspace.huy-hanoietrip.chatgpt.site", "X-OpenRouter-Title": "Minimum AI Workspace" } : {}) }, body: JSON.stringify({ model, messages: [{ role: "user", content }], max_tokens: outputLimit, ...(provider === "OpenRouter" ? { reasoning: { effort: "low", exclude: true }, ...(executionMode === "execute" ? { response_format: { type: "json_object" } } : {}) } : {}) }) });
+      response = await fetch(`${compatibleBases[provider]}/chat/completions`, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", ...(provider === "OpenRouter" ? { "HTTP-Referer": "https://minimum-ai-workspace.huy-hanoietrip.chatgpt.site", "X-OpenRouter-Title": "Minimum AI Workspace" } : {}) }, body: JSON.stringify({ model, messages: [{ role: "user", content }], max_tokens: outputLimit, ...(provider === "OpenRouter" && model !== "openrouter/free" ? { reasoning: { effort: "low", exclude: true }, ...(executionMode === "execute" ? { response_format: { type: "json_object" } } : {}) } : {}) }) });
     }
 
     const data = await response.json() as Record<string, any>;
@@ -33,7 +33,7 @@ export async function POST(request: Request) {
     if (!text) {
       const finish = data.choices?.[0]?.finish_reason;
       const reasoning = data.choices?.[0]?.message?.reasoning;
-      return json({ error: reasoning ? "Model chỉ trả reasoning nhưng không tạo nội dung cuối. Hãy thử lại hoặc chọn model hỗ trợ JSON tốt hơn." : `Provider không tạo nội dung cuối${finish ? ` (finish: ${finish})` : ""}. Hãy thử lại hoặc đổi model.` }, 502);
+      return json({ error: model === "openrouter/free" ? "Free Router không tìm được model phù hợp để tạo project patch. Hãy thử lại hoặc chọn chế độ trả phí; app chưa tạo hay sửa file nào." : reasoning ? "Model chỉ trả reasoning nhưng không tạo nội dung cuối. Hãy thử lại hoặc chọn model hỗ trợ JSON tốt hơn." : `Provider không tạo nội dung cuối${finish ? ` (finish: ${finish})` : ""}. Hãy thử lại hoặc đổi model.` }, 502);
     }
     const usage = data.usage ? { promptTokens: Number(data.usage.prompt_tokens || data.usage.input_tokens || 0), completionTokens: Number(data.usage.completion_tokens || data.usage.output_tokens || 0), totalTokens: Number(data.usage.total_tokens || 0), cost: Number(data.usage.cost || 0) } : undefined;
     return json({ text, usage, selectedModel: data.model || model });
