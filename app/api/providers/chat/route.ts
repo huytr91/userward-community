@@ -36,7 +36,7 @@ export async function POST(request: Request) {
       return json({ error: reasoning ? "Model chỉ trả reasoning nhưng không tạo nội dung cuối. Hãy thử lại hoặc chọn model hỗ trợ JSON tốt hơn." : `Provider không tạo nội dung cuối${finish ? ` (finish: ${finish})` : ""}. Hãy thử lại hoặc đổi model.` }, 502);
     }
     const usage = data.usage ? { promptTokens: Number(data.usage.prompt_tokens || data.usage.input_tokens || 0), completionTokens: Number(data.usage.completion_tokens || data.usage.output_tokens || 0), totalTokens: Number(data.usage.total_tokens || 0), cost: Number(data.usage.cost || 0) } : undefined;
-    return json({ text, usage });
+    return json({ text, usage, selectedModel: data.model || model });
   } catch {
     return json({ error: "Không thể gửi yêu cầu tới provider." }, 500);
   }
