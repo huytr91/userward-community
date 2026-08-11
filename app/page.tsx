@@ -111,6 +111,7 @@ export default function Home() {
   const [provider, setProvider] = useState("");
   const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [rememberKey, setRememberKey] = useState(true);
   const [credentialProvider, setCredentialProvider] = useState("");
   const [connectionError, setConnectionError] = useState("");
   const [availableModels, setAvailableModels] = useState<string[]>([]);
@@ -157,7 +158,8 @@ export default function Home() {
   useEffect(() => {
     const savedProjects = localStorage.getItem("minimum-projects");
     if (savedProjects) { try { const demoIds = new Set(["m1","d1","t1","m2","d2","t2","f1","r1","m3","t3","m4"]); const parsed = (JSON.parse(savedProjects) as LocalProject[]).map(project => { const realEntries = project.entries.filter(entry => !demoIds.has(entry.id)); return { ...project, entries: realEntries.some(entry => entry.id === "security-policy") ? realEntries : [...realEntries, initialEntries.find(entry => entry.id === "security-policy")!] }; }); setProjectList(parsed); setActiveProjectId(parsed[0]?.id || "pdf"); setEntries(parsed[0]?.entries || []); } catch {} }
-    sessionStorage.removeItem("minimum-provider"); sessionStorage.removeItem("minimum-model"); sessionStorage.removeItem("minimum-api-key");
+    const savedConnection = localStorage.getItem("minimum-provider-connection");
+    if (savedConnection) { try { const saved = JSON.parse(savedConnection) as { provider?: string; model?: string; apiKey?: string }; if (saved.provider && saved.model && saved.apiKey) { setProvider(saved.provider); setCredentialProvider(saved.provider); setModel(saved.model); setApiKey(saved.apiKey); setRememberKey(true); } } catch { localStorage.removeItem("minimum-provider-connection"); } }
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setSearchOpen(true); setTimeout(() => searchRef.current?.focus(), 20); }
       if (e.key === "Escape") setSearchOpen(false);
@@ -297,13 +299,14 @@ export default function Home() {
   const saveProvider = () => {
     if (!credentialProvider || !apiKey.trim() || !model) return;
     setProvider(credentialProvider);
-    sessionStorage.setItem("minimum-provider", credentialProvider); sessionStorage.setItem("minimum-model", model); sessionStorage.removeItem("minimum-api-key");
+    if (rememberKey) localStorage.setItem("minimum-provider-connection", JSON.stringify({ provider: credentialProvider, model, apiKey }));
+    else localStorage.removeItem("minimum-provider-connection");
     setProvidersOpen(false); setCredentialProvider(""); setAvailableModels([]);
   };
 
   const disconnectProvider = () => {
     setProvider(""); setModel(""); setApiKey("");
-    sessionStorage.removeItem("minimum-provider"); sessionStorage.removeItem("minimum-model"); sessionStorage.removeItem("minimum-api-key");
+    localStorage.removeItem("minimum-provider-connection");
   };
 
   return <main className="shell">
