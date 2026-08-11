@@ -2488,3 +2488,70 @@ Mọi feature mới phải trả lời được câu hỏi:
 Nếu không:
 
 Không đưa vào core product.
+
+---
+
+# 79. PROJECT ADVISOR VÀ PROJECT BRD GATE
+
+Project Advisor chỉ được kích hoạt khi user bắt đầu một công việc có quy mô hoặc nhiều bước, ví dụ: tạo video, xây phần mềm, coding trong folder, nghiên cứu, phân tích dữ liệu, automation hoặc sản xuất nhiều đầu ra. Chat hỏi đáp thông thường không bị ép qua quy trình dự án.
+
+Khi phát hiện project intent, hệ thống phải:
+
+1. Phỏng vấn user bằng ngôn ngữ nghiệp vụ, ưu tiên tick chọn và Yes/No.
+2. Không hỏi user chọn framework, thư viện, API hay kiến trúc trừ khi user chủ động yêu cầu quyền kiểm soát kỹ thuật.
+3. Không suy đoán các yêu cầu còn thiếu có thể làm thay đổi kết quả.
+4. Tạo Project Brief/BRD ngắn gồm mục tiêu, đầu vào, đầu ra, quy mô, ràng buộc, tiêu chí hoàn thành và quyền thay đổi dữ liệu.
+5. Yêu cầu user xác nhận brief trước khi thực thi hoặc tiêu token đáng kể.
+
+# 80. TASK-AWARE MODEL VÀ TOOL ROUTING
+
+Không dùng một model duy nhất cho toàn bộ dự án. Pipeline bắt buộc:
+
+```text
+USER GOAL
+→ CLARIFICATION
+→ PROJECT BRIEF
+→ TASK DECOMPOSITION
+→ TOOL SELECTION
+→ MODEL SELECTION
+→ PROVIDER ROUTING
+→ VERIFICATION
+```
+
+OpenRouter Auto Router có thể được dùng để chọn model theo tác vụ, nhưng Minimum phải kiểm soát allowed models, chính sách dữ liệu, giới hạn chi phí và khả năng tool. Model routing không được nhầm với tool routing: chọn Gemini không tự cấp quyền Gmail; chọn GPT không tự có terminal; chọn Claude không tự có quyền sửa file.
+
+User không phải chọn model trong luồng mặc định. App chỉ xin xác nhận khi đổi model làm tăng đáng kể chi phí, thay đổi chính sách riêng tư, hoặc ảnh hưởng mức chất lượng đã chọn.
+
+# 81. AI PROJECT FINANCE MANAGER
+
+Mỗi project phải có ngân sách AI riêng và ba chiến lược sử dụng:
+
+- **Tiết kiệm:** model rẻ cho phần lớn bước, giới hạn retry và số biến thể.
+- **Cân bằng:** model mạnh cho bước quyết định/review, model rẻ cho tác vụ lặp lại.
+- **Chất lượng:** model tốt nhất phù hợp tác vụ, nhiều vòng kiểm tra và biến thể hơn.
+
+Dashboard phải hiển thị tối thiểu:
+
+- tổng input/output token;
+- chi phí thực tế khi provider cung cấp;
+- tác vụ tiêu tốn nhiều nhất;
+- tỷ lệ chi phí theo bước;
+- retry/rework cost;
+- cảnh báo tốc độ đốt ngân sách;
+- phương án rẻ hơn và ảnh hưởng dự kiến tới chất lượng.
+
+Nguyên tắc: không hiển thị số liệu giả. Dữ liệu lịch sử không có usage phải được gắn nhãn “chưa đo được”.
+
+# 82. PROJECT EXECUTION CONSENT
+
+Trước khi thực thi, giao diện phải cho user thấy và xác nhận:
+
+```text
+PROJECT BRIEF
+ROUTING STRATEGY
+BUDGET MODE
+EXPECTED OUTPUT
+WRITE/EXTERNAL ACTION PERMISSIONS
+```
+
+Mọi lần dự kiến vượt ngân sách, chuyển sang model đắt hơn đáng kể hoặc gửi dữ liệu sang provider có chính sách khác đều phải yêu cầu xác nhận lại.
