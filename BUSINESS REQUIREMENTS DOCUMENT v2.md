@@ -2555,3 +2555,70 @@ WRITE/EXTERNAL ACTION PERMISSIONS
 ```
 
 Mọi lần dự kiến vượt ngân sách, chuyển sang model đắt hơn đáng kể hoặc gửi dữ liệu sang provider có chính sách khác đều phải yêu cầu xác nhận lại.
+
+# 83. UNIVERSAL TOOL REGISTRY — “TAY CHÂN” CỦA AI
+
+Minimum phải quản lý model và công cụ thành hai lớp độc lập. Model dùng để hiểu, lập kế hoạch và sinh nội dung; Tool Registry dùng để thực hiện hành động thật.
+
+| Nhóm | Adapter mục tiêu | Bằng chứng hoàn thành bắt buộc |
+|---|---|---|
+| Local project | Filesystem, terminal, package runner | diff, file hash, exit code, test result |
+| Video | Sora/Runway/Kling/Veo; Remotion/FFmpeg | video ID hoặc file MP4 kiểm tra được |
+| Image | Image generation provider | image ID hoặc file PNG/JPG |
+| Audio | TTS, transcription, FFmpeg | audio ID hoặc file MP3/WAV |
+| Documents | DOCX/XLSX/PPTX/PDF runtime | file đúng định dạng và mở/validate được |
+| Email & calendar | Gmail, Outlook, Calendar | message/event ID từ provider |
+| Web & research | Browser/search/citation pipeline | URL, timestamp và nguồn truy xuất |
+| Source & deploy | GitHub, Vercel, Cloudflare | commit/deployment ID và URL |
+| RPA | UiPath, Power Automate, n8n, Make, Robocorp | job/run ID, trạng thái và output artifact |
+
+Không hard-code theo từng câu user. Mỗi adapter tự công bố machine-readable capability gồm input/output schema, quyền, chi phí, dữ liệu rời thiết bị, khả năng đảo ngược và evidence trả về.
+
+# 84. CAPABILITY NEGOTIATION
+
+Trước khi gọi model hoặc tool, hệ thống phải tạo Capability Plan:
+
+```text
+Required outcomes/actions
+→ Available adapters
+→ Missing adapters or permissions
+→ Supported / Partial / Unsupported
+→ Cost, privacy and approval requirements
+```
+
+UI phải nói bằng ngôn ngữ user: **Làm được**, **Làm được một phần**, hoặc **Chưa làm được**; tách rõ phần thực thi được, phần còn thiếu và connector cần bổ sung. OpenRouter/model luôn nhận Capability Manifest hiện hành và không được tự suy đoán mình có terminal, filesystem, Gmail, browser, video renderer hoặc RPA.
+
+# 85. RPA ORCHESTRATION
+
+Minimum tương tác hai chiều với UiPath, Microsoft Power Automate, n8n, Make và Robocorp qua adapter/API/webhook, ưu tiên input/output có schema thay vì prompt tự do.
+
+```text
+TaskSpec → workflow allowlist → map input → preview data/action
+→ user approval for side effects → start job → monitor status
+→ collect logs/output/artifacts → validate evidence → memory + cost ledger
+```
+
+AI không được tự chạy workflow lạ, tự sửa workflow production hoặc truyền secret vào prompt. Gửi email, xóa/ghi đè dữ liệu, upload/publish, giao dịch tài chính, thay đổi quyền và thao tác production luôn cần confirmation gate.
+
+# 86. EXECUTION EVIDENCE CONTRACT
+
+Mọi tuyên bố “đã tạo”, “đã gửi”, “đã chạy”, “đã đăng”, “đã deploy” hoặc “đã cập nhật” phải có evidence do tool trả về:
+
+```text
+tool_call_id, adapter_id, action, status,
+started_at, completed_at, artifact_ids/external_ids,
+validation_result, user_approval_id
+```
+
+Không có evidence → không được báo hoàn thành. Model response không phải bằng chứng thực thi.
+
+# 87. DELIVERY PHASES FOR TOOL EXPANSION
+
+1. Foundation: Tool Registry, Capability Manifest, permission/approval engine, evidence ledger.
+2. Local execution: filesystem + terminal/runtime + tests.
+3. Knowledge work: DOCX/XLSX/PPTX/PDF, browser/search, email/calendar.
+4. Media: image, audio, video generation và FFmpeg/Remotion assembly.
+5. RPA: n8n/Make webhook trước; UiPath/Power Automate/Robocorp adapters tiếp theo.
+6. Production actions: GitHub/deploy và workflow có side effect cao sau security review.
+
+Connector chỉ được chuyển từ “Planned” sang “Available” khi có integration test thật, permission boundary và evidence validation. UI không được gắn nhãn đã kết nối chỉ vì user nhập URL/key.
