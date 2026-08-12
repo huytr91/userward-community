@@ -2726,3 +2726,28 @@ Personal build PASS khi:
 - Tool Registry hiển thị adapter thật theo integration test.
 - Legal Gate và confirmation gate chạy trước mọi side effect.
 - Mọi completion claim có evidence.
+
+# 94. OUTPUT-INTENT CLASSIFICATION
+
+Capability Gate phải phân loại theo **artifact/hành động cuối cùng user yêu cầu**, không chặn dựa trên một từ khóa lĩnh vực.
+
+Ví dụ bắt buộc:
+
+```text
+"tạo video MP4"                 → media artifact request
+"tạo tool làm video bằng Python" → coding artifact request
+"viết script ghép audio"         → coding artifact request
+"tạo app xuất PDF"               → coding artifact request
+"xuất file PDF này"              → document artifact request
+```
+
+Thứ tự phân loại:
+
+```text
+coding/tool intent
+→ requested deliverable
+→ required runtime/tool
+→ capability availability
+```
+
+Không dùng regex từ khóa đơn lẻ làm quyết định cuối. Rule cục bộ chỉ được fast-path khi confidence cao; trường hợp nhiều nghĩa phải chuyển intent classifier/model nhỏ hoặc hỏi một câu làm rõ, không được tự chặn.

@@ -95,13 +95,15 @@ function buildUsagePlan(input: string) {
 
 function assessCapabilities(input: string, executionMode: "analyze" | "execute", hasFolder: boolean, edition: ProductEdition = PRODUCT_EDITION): CapabilityAssessment {
   const q = input.toLowerCase().trim();
-  const directVideo = /(?:tạo|xuất|render|làm).{0,20}(?:mp4|video)|(?:mp4|video).{0,20}(?:trực tiếp|hoàn chỉnh|thành phẩm)/i.test(q) && !/script|kịch bản|storyboard|shot list|lời thoại/i.test(q);
-  const directAudio = /(?:tạo|xuất|render).{0,20}(?:mp3|wav|audio|giọng nói|voiceover)/i.test(q);
-  const directImage = /(?:tạo|generate|vẽ).{0,20}(?:ảnh|hình ảnh|png|jpg|logo)/i.test(q);
-  const officeBinary = /(?:tạo|xuất).{0,20}(?:docx|xlsx|pptx|powerpoint|file pdf)/i.test(q);
+  const codingArtifact = /(?:tool|công cụ|script|code|app|ứng dụng|phần mềm|website|api|pipeline|workflow|thư viện|package|python|javascript|typescript|react|node|ffmpeg|remotion).{0,40}(?:video|audio|ảnh|image|pdf|docx|xlsx|pptx)|(?:tạo|viết|xây|làm).{0,20}(?:tool|công cụ|script|code|app|ứng dụng|phần mềm|website|api|pipeline|workflow)/i.test(q);
+  const directVideo = !codingArtifact && (/(?:tạo|xuất|render|làm).{0,20}(?:mp4|video)|(?:mp4|video).{0,20}(?:trực tiếp|hoàn chỉnh|thành phẩm)/i.test(q)) && !/script|kịch bản|storyboard|shot list|lời thoại/i.test(q);
+  const directAudio = !codingArtifact && /(?:tạo|xuất|render).{0,20}(?:mp3|wav|audio|giọng nói|voiceover)/i.test(q);
+  const directImage = !codingArtifact && /(?:tạo|generate|vẽ).{0,20}(?:ảnh|hình ảnh|png|jpg|logo)/i.test(q);
+  const officeBinary = !codingArtifact && /(?:tạo|xuất).{0,20}(?:docx|xlsx|pptx|powerpoint|file pdf)/i.test(q);
   const externalAction = /(?:gửi|send).{0,20}(?:email|gmail|tin nhắn)|(?:đăng|publish|upload).{0,20}(?:web|youtube|facebook|tiktok)|đặt lịch|chuyển tiền/i.test(q);
   const runAction = /(?:chạy|execute|cài đặt|deploy).{0,20}(?:code|script|app|website|server)/i.test(q);
   const communityOutOfScope = directVideo || directAudio || directImage || officeBinary || externalAction;
+  if (codingArtifact) return { level: executionMode === "execute" && hasFolder ? "supported" : "partial", title: "Đây là yêu cầu coding, không phải tạo media trực tiếp", canDo: executionMode === "execute" && hasFolder ? "Tạo hoặc sửa source code của tool trong folder sau khi user duyệt." : "Phân tích kiến trúc và viết source code cho tool.", cannotDo: executionMode === "execute" && hasFolder ? undefined : "Chưa thể ghi project nếu chưa chọn folder và bật chế độ Làm việc với dự án.", needs: executionMode === "execute" && hasFolder ? undefined : "Chọn folder nếu muốn app tạo file thật." };
   if (edition === "community" && communityOutOfScope) return { level: "unsupported", title: "Không có trong Community Edition", canDo: "Chat, phân tích, đọc file và coding trong workspace.", cannotDo: "Media, documents, email/calendar, deploy và RPA không được đóng gói trong bản GitHub.", needs: "Dùng Personal Edition hoặc tự phát triển adapter qua interface công khai." };
   if (directVideo) return { level: "unsupported", title: "Chưa thể tạo video thành phẩm", canDo: "Tạo brief, storyboard, lời thoại, shot list và script dựng video.", cannotDo: "Không thể render hoặc xuất MP4 thật trong cấu hình hiện tại.", needs: "Cần kết nối công cụ video generation/rendering." };
   if (directAudio) return { level: "unsupported", title: "Chưa thể tạo audio thành phẩm", canDo: "Tạo lời thoại, kịch bản đọc và hướng dẫn sản xuất.", cannotDo: "Không thể xuất MP3/WAV hoặc giọng nói thật.", needs: "Cần kết nối công cụ text-to-speech/audio." };
