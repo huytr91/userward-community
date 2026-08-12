@@ -2622,3 +2622,44 @@ Không có evidence → không được báo hoàn thành. Model response không
 6. Production actions: GitHub/deploy và workflow có side effect cao sau security review.
 
 Connector chỉ được chuyển từ “Planned” sang “Available” khi có integration test thật, permission boundary và evidence validation. UI không được gắn nhãn đã kết nối chỉ vì user nhập URL/key.
+
+# 88. MANDATORY LEGAL & SAFETY GATE
+
+Mọi request phải qua Legal & Safety Gate trước model routing và tool execution. Kết quả gồm:
+
+- **ALLOW:** chưa phát hiện rủi ro cần chặn; tiếp tục với policy provider.
+- **CONSENT REQUIRED:** có dữ liệu cá nhân, hình ảnh/giọng người thật, tài sản bản quyền hoặc hành động bên ngoài; phải xác nhận quyền, mục đích, provider nhận dữ liệu và phạm vi sử dụng.
+- **BLOCK:** mạo danh/lừa đảo, deepfake trái phép, nội dung tình dục không đồng thuận hoặc liên quan trẻ em, malware/phishing, hành vi né luật hoặc gây hại rõ ràng; không gọi model/tool và không tiêu token generation.
+
+Gate phải áp dụng cho chat, upload, project execution, media generation và RPA. Kiểm tra tự động chỉ là lớp an toàn, không phải ý kiến pháp lý; trường hợp không chắc chắn phải chuyển human/legal review.
+
+# 89. SYNTHETIC MEDIA COMPLIANCE
+
+Video, image và TTS phải mặc định:
+
+1. Không clone người khác nếu thiếu consent có thể kiểm chứng.
+2. Cấm mạo danh để lừa đảo, thao túng, giao dịch tài chính hoặc tạo bằng chứng giả.
+3. Gắn disclosure/provenance máy đọc được và nhãn nhìn thấy khi nội dung có thể bị nhầm là thật.
+4. Ghi model/provider, thời điểm, consent ID, prompt hash và artifact ID.
+5. Cho phép xoá dữ liệu đầu vào và artifact theo retention policy.
+6. Không đưa dữ liệu sinh trắc học/giọng nói vào prompt hoặc log không cần thiết.
+
+MVP chỉ bật TTS bằng giọng tổng hợp có sẵn và video hư cấu/không mô phỏng người thật. Voice cloning và realistic digital replica là tính năng high-risk, chỉ được mở sau legal review, identity/liveness verification và consent ledger.
+
+# 90. LEGAL AUDIT TRAIL
+
+Mỗi request cần lưu tối thiểu:
+
+```text
+legal_assessment_id
+policy_version
+jurisdiction_assumptions
+risk_level
+matched_risk_categories
+consent_id / approval_id
+provider_data_disclosure
+decision: allow / consent / block / human_review
+tool evidence
+```
+
+Không lưu hidden chain-of-thought. Chỉ lưu rule/policy match và quyết định vận hành đủ để audit.
