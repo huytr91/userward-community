@@ -28,9 +28,18 @@ function parseInlineQuestions(text: string): InlineQuestion[] {
     if (question) {
       current = { id: `q${question[1]}`, ask: question[2].trim(), options: [], multi: /chọn nhiều|multiple|select all|có thể chọn nhiều/i.test(question[2]) };
       questions.push(current);
-    } else if (current && option) current.options.push(option[1].trim());
+    } else if (current && option) {
+      const value=option[1].trim();
+      const inlineOptions=value.split(/\s+[·|]\s+/).map(item=>item.trim()).filter(Boolean);
+      current.options.push(...(inlineOptions.length>1?inlineOptions:[value]));
+    }
   }
   return questions.length >= 2 && questions.some(question=>question.options.length >= 2) ? questions : [];
+}
+
+function inlineInterviewIntro(text:string) {
+  const firstQuestion=text.search(/^\s*\d+[.)]\s+/m);
+  return (firstQuestion>=0?text.slice(0,firstQuestion):text).replace(/\*\*/g,"").replace(/^#+\s*/gm,"").trim();
 }
 
 const initialEntries: Entry[] = [
