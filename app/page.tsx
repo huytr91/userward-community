@@ -13,6 +13,8 @@ type PendingPatch = { files: PatchFile[]; summary: string };
 type InterviewQuestion = { id: string; label: string; ask: string; options: string[]; multi?: boolean };
 type CapabilityAssessment = { level: "supported" | "partial" | "unsupported"; title: string; canDo: string; cannotDo?: string; needs?: string };
 type LegalAssessment = { level: "allow" | "consent" | "block"; title: string; reason: string; checks: string[] };
+type ProductEdition = "personal" | "community";
+const PRODUCT_EDITION: ProductEdition = import.meta.env.VITE_MINIMUM_EDITION === "community" ? "community" : "personal";
 
 const initialEntries: Entry[] = [
   { id: "m1", kind: "message", role: "user", text: "Mình muốn bộ chuyển PDF sang DOCX chạy hoàn toàn local và giữ đúng bố cục bảng.", time: "06 Aug · 09:14" },
@@ -48,7 +50,7 @@ const filters: { label: string; value: "all" | Kind }[] = [
   { label: "Tasks", value: "task" }, { label: "Decisions", value: "decision" },
   { label: "Files", value: "file" },
 ];
-const toolCatalog = [
+const personalToolCatalog = [
   { group: "Local", name: "Filesystem", description: "Tạo/sửa file trong folder được duyệt", phase: "Sẵn sàng khi chọn folder" },
   { group: "Local", name: "Terminal & Runtime", description: "Chạy code, test và cài dependency", phase: "Cần Local Companion" },
   { group: "Media", name: "Video & FFmpeg", description: "Sora/Runway/Kling/Veo + Remotion/FFmpeg", phase: "Cần API/runtime" },
@@ -58,6 +60,7 @@ const toolCatalog = [
   { group: "Web", name: "Browser & Deploy", description: "Research, GitHub, Vercel và Cloudflare", phase: "Cần connector" },
   { group: "RPA", name: "RPA Orchestrator", description: "UiPath, Power Automate, n8n, Make, Robocorp", phase: "Cần workflow adapter" },
 ];
+const communityToolCatalog = personalToolCatalog.filter(tool => tool.name === "Filesystem" || tool.name === "Terminal & Runtime");
 
 function Icon({ name }: { name: string }) {
   const paths: Record<string, React.ReactNode> = {
@@ -90,7 +93,7 @@ function buildUsagePlan(input: string) {
   return { profile: "General Work", risk: "Thấp", priority: "Phù hợp mục tiêu", tool: "LLM cân bằng chi phí", verification: "Kiểm tra tiêu chuẩn", source: "Yêu cầu nguồn khi có factual claim", inference: "Nêu rõ khi suy luận", output: "Ngắn gọn, đúng định dạng" };
 }
 
-function assessCapabilities(input: string, executionMode: "analyze" | "execute", hasFolder: boolean): CapabilityAssessment {
+function assessCapabilities(input: string, executionMode: "analyze" | "execute", hasFolder: boolean, edition: ProductEdition = PRODUCT_EDITION): CapabilityAssessment {
   const q = input.toLowerCase().trim();
   const directVideo = /(?:tạo|xuất|render|làm).{0,20}(?:mp4|video)|(?:mp4|video).{0,20}(?:trực tiếp|hoàn chỉnh|thành phẩm)/i.test(q) && !/script|kịch bản|storyboard|shot list|lời thoại/i.test(q);
   const directAudio = /(?:tạo|xuất|render).{0,20}(?:mp3|wav|audio|giọng nói|voiceover)/i.test(q);
@@ -98,6 +101,8 @@ function assessCapabilities(input: string, executionMode: "analyze" | "execute",
   const officeBinary = /(?:tạo|xuất).{0,20}(?:docx|xlsx|pptx|powerpoint|file pdf)/i.test(q);
   const externalAction = /(?:gửi|send).{0,20}(?:email|gmail|tin nhắn)|(?:đăng|publish|upload).{0,20}(?:web|youtube|facebook|tiktok)|đặt lịch|chuyển tiền/i.test(q);
   const runAction = /(?:chạy|execute|cài đặt|deploy).{0,20}(?:code|script|app|website|server)/i.test(q);
+  const communityOutOfScope = directVideo || directAudio || directImage || officeBinary || externalAction;
+  if (edition === "community" && communityOutOfScope) return { level: "unsupported", title: "Không có trong Community Edition", canDo: "Chat, phân tích, đọc file và coding trong workspace.", cannotDo: "Media, documents, email/calendar, deploy và RPA không được đóng gói trong bản GitHub.", needs: "Dùng Personal Edition hoặc tự phát triển adapter qua interface công khai." };
   if (directVideo) return { level: "unsupported", title: "Chưa thể tạo video thành phẩm", canDo: "Tạo brief, storyboard, lời thoại, shot list và script dựng video.", cannotDo: "Không thể render hoặc xuất MP4 thật trong cấu hình hiện tại.", needs: "Cần kết nối công cụ video generation/rendering." };
   if (directAudio) return { level: "unsupported", title: "Chưa thể tạo audio thành phẩm", canDo: "Tạo lời thoại, kịch bản đọc và hướng dẫn sản xuất.", cannotDo: "Không thể xuất MP3/WAV hoặc giọng nói thật.", needs: "Cần kết nối công cụ text-to-speech/audio." };
   if (directImage) return { level: "unsupported", title: "Chưa thể tạo ảnh trực tiếp", canDo: "Tạo concept, art direction và prompt hình ảnh.", cannotDo: "Không thể xuất PNG/JPG thật.", needs: "Cần kết nối công cụ image generation." };
@@ -137,6 +142,7 @@ function redactSecrets(input: string) {
 }
 
 export default function Home() {
+  const toolCatalog = PRODUCT_EDITION === "personal" ? personalToolCatalog : communityToolCatalog;
   const [entries, setEntries] = useState<Entry[]>(initialEntries);
   const [projectList, setProjectList] = useState<LocalProject[]>(seedProjects);
   const [activeProjectId, setActiveProjectId] = useState("pdf");
@@ -410,7 +416,7 @@ export default function Home() {
 
   return <main className="shell">
     <aside className="projects">
-      <div className="brand"><div className="brandmark">M</div><span>Minimum</span></div>
+      <div className="brand"><div className="brandmark">M</div><span>Minimum</span><em>{PRODUCT_EDITION==="personal"?"PERSONAL":"COMMUNITY"}</em></div>
       <button className="new-project" onClick={createChat}><Icon name="plus"/> Chat mới</button>
       <button className="new-project-link" onClick={()=>setNewProjectOpen(true)}>＋ Tạo dự án có folder</button>
       <button className="provider-button" onClick={()=>setProvidersOpen(true)}>⌘ <span>{provider || "Kết nối model"}</span><b>{provider ? "✓" : "0"}</b></button>
@@ -448,7 +454,7 @@ export default function Home() {
       <section><div className="section-row"><label>RÀNG BUỘC ĐANG ÁP DỤNG</label><span>2</span></div><div className="memory-item"><i>!</i><p>Không sửa module OCR khi xử lý bảng DOCX.</p></div><div className="memory-item"><i>⌁</i><p>Phần tính toán hình học phải tách khỏi OCR.</p></div></section>
       <section className="token-dashboard"><div className="section-row"><label>TIÊU THỤ TOKEN</label><span>{tokenStats.measured} tác vụ đo được</span></div><div className="token-total"><span>Tổng trong cuộc trò chuyện</span><b>{tokenStats.total.toLocaleString("vi-VN")} <small>token</small></b></div><div className="token-split"><div><span>Context / input</span><b>{tokenStats.input.toLocaleString("vi-VN")}</b><i style={{width:`${tokenStats.total?Math.max(4,tokenStats.input/tokenStats.total*100):0}%`}}/></div><div><span>Trả lời / output</span><b>{tokenStats.output.toLocaleString("vi-VN")}</b><i style={{width:`${tokenStats.total?Math.max(4,tokenStats.output/tokenStats.total*100):0}%`}}/></div></div><div className="token-top"><small>TÁC VỤ TỐN NHIỀU NHẤT</small>{tokenStats.top?<><b>{tokenStats.top.title || (tokenStats.top.role==="ai"?"Phản hồi AI":"Tác vụ")}</b><span>{tokenStats.top.usage?.totalTokens.toLocaleString("vi-VN")} token · {Math.round((tokenStats.top.usage?.totalTokens||0)/Math.max(1,tokenStats.total)*100)}% tổng</span></>:<span>Chưa có usage thật. Gửi yêu cầu mới để bắt đầu đo.</span>}</div></section>
       <section className="finance-summary"><label>{lastBudgetMode==="free-first"?"MỨC TIÊU TỐN":"NGÂN SÁCH AI"}</label>{lastBudgetMode!=="free-first"&&<div><span>Chế độ</span><b>{lastBudgetMode==="economy"?"Tiết kiệm":lastBudgetMode==="quality"?"Chất lượng":"Cân bằng"}</b></div>}<div><span>Token đã dùng</span><b>{tokenStats.total.toLocaleString("vi-VN")}</b></div><div><span>Chi phí provider</span><b>{tokenStats.cost>0?`$${tokenStats.cost.toFixed(4)}`:lastBudgetMode==="free-first"?"$0 hoặc chưa báo":"Chưa có dữ liệu"}</b></div><small>{lastBudgetMode==="free-first"?"Tác vụ nhỏ đang dùng Free-first; không hiển thị dự toán không cần thiết.":"Minimum chỉ hiển thị chi phí thật provider trả về; không tự ước lượng thành số giả."}</small></section>
-      <section><div className="section-row"><label>TOOL REGISTRY</label><span>{folderHandle?"1 sẵn sàng":"0 sẵn sàng"}</span></div><button className="tool-hub-button" onClick={()=>setToolsOpen(true)}><b>⚙ Quản lý tay chân AI</b><small>Media · Documents · Email · Web · Deploy · RPA</small></button></section><section><label>QUYẾT ĐỊNH GẦN ĐÂY</label><button className="decision-link"><i/> Use MinerU for layout detection <Icon name="chevron"/></button></section>
+      <section><div className="section-row"><label>TOOL REGISTRY · {PRODUCT_EDITION==="personal"?"PERSONAL":"COMMUNITY"}</label><span>{folderHandle?"1 sẵn sàng":"0 sẵn sàng"}</span></div><button className="tool-hub-button" onClick={()=>setToolsOpen(true)}><b>⚙ Quản lý tay chân AI</b><small>{PRODUCT_EDITION==="personal"?"Media · Documents · Email · Web · Deploy · RPA":"Chat · Files · Coding only"}</small></button></section><section><label>QUYẾT ĐỊNH GẦN ĐÂY</label><button className="decision-link"><i/> Use MinerU for layout detection <Icon name="chevron"/></button></section>
       <button className="inspect-memory"><Icon name="brain"/> Kiểm tra bộ nhớ dự án</button>
     </aside>
 
@@ -464,7 +470,7 @@ export default function Home() {
       ["DeepSeek", "DeepSeek Chat & Reasoner", "API key"], ["Qwen", "Alibaba Cloud Model Studio", "DashScope key"],
       ["Kimi", "Moonshot AI models", "API key"], ["OpenRouter", "Nhiều hãng qua một key", "Khuyến nghị"]
     ].map(([name,desc,method])=><div className={`provider-row ${credentialProvider===name?"chosen":""}`} key={name}><span className="provider-logo">{name[0]}</span><div><b>{name}</b><small>{desc} · {method}</small></div><button onClick={()=>{setCredentialProvider(name);setApiKey("");setModel("");setAvailableModels([]);setConnectionError("")}}>{provider===name?"Kết nối lại":"Chọn"}</button></div>)}<div className="provider-row local-row"><span className="provider-logo">9</span><div><b>9Router · Local gateway</b><small>Quản lý key, subscription và fallback tại localhost:20128</small></div><button disabled>Cần Companion</button></div>{providerGuide && <div className="key-guide"><div><b>Lấy API key {credentialProvider} trong 3 bước</b><ol><li>Mở trang chính thức bằng nút bên dưới và đăng nhập.</li><li>Tạo key mới, đặt tên “Minimum”, rồi sao chép.</li><li>Quay lại đây, dán key và nhấn “Kiểm tra key”.</li></ol></div><div className="key-guide-actions"><a href={providerGuide.keyUrl} target="_blank" rel="noreferrer">{providerGuide.keyLabel || "Mở trang API key"} ↗</a><a href={providerGuide.billingUrl} target="_blank" rel="noreferrer">Billing / Credit ↗</a></div><small>{providerGuide.note} Không gửi key qua chat hoặc lưu vào project.</small></div>}{credentialProvider && <div className="credential-form"><label>API key của {credentialProvider}</label><div><input type="password" value={apiKey} onChange={e=>{setApiKey(e.target.value);setAvailableModels([])}} placeholder="Dán API key tại đây" autoComplete="off"/><button onClick={connectProvider} disabled={!apiKey.trim()||connecting}>{connecting?"Đang kiểm tra...":"Kiểm tra key"}</button></div><small>Key chỉ tồn tại trong phiên tab này; không lưu vào project hay database.</small>{availableModels.length>0&&<div className="model-picker"><label>Chọn model</label><select value={model} onChange={e=>setModel(e.target.value)}>{availableModels.map(item=><option value={item} key={item}>{item}</option>)}</select><button onClick={saveProvider}>Lưu & kết nối</button></div>}{connectionError&&<p>{connectionError}</p>}</div>}</div><footer><span>OpenRouter chạy ngay; 9Router cần Local Companion để website gọi máy bạn an toàn.</span><button onClick={()=>setProvidersOpen(false)}>Đóng</button></footer></div></div>}
-    {toolsOpen&&<div className="overlay" onMouseDown={e=>e.target===e.currentTarget&&setToolsOpen(false)}><div className="tool-modal"><header><div><small>UNIVERSAL TOOL REGISTRY</small><h2>Tay chân của Minimum</h2><p>Model lập kế hoạch; adapter thực hiện và phải trả bằng chứng thật.</p></div><button onClick={()=>setToolsOpen(false)}><Icon name="close"/></button></header><div className="tool-grid">{toolCatalog.map(tool=>{const ready=tool.name==="Filesystem"&&Boolean(folderHandle);return <article className={ready?"ready":""} key={tool.name}><span>{tool.group}</span><b>{tool.name}</b><p>{tool.description}</p><em>{ready?`✓ Đã cấp quyền: ${folderHandle?.name}`:tool.phase}</em><button disabled={!ready} onClick={()=>tool.name==="Filesystem"&&chooseFolder()}>{ready?"Đang hoạt động":"Chưa cấu hình"}</button></article>})}</div><div className="rpa-policy"><b>RPA Safety Gate</b><span>UiPath · Power Automate · n8n · Make · Robocorp</span><p>Chỉ chạy workflow trong allowlist. Gửi/xóa/ghi đè/upload/publish và thao tác production luôn cần user xác nhận; job chỉ hoàn tất khi có run ID và output evidence.</p></div><footer><span>Không connector nào được báo “đã kết nối” trước khi integration test thành công.</span><button onClick={()=>setToolsOpen(false)}>Đóng</button></footer></div></div>}
+    {toolsOpen&&<div className="overlay" onMouseDown={e=>e.target===e.currentTarget&&setToolsOpen(false)}><div className="tool-modal"><header><div><small>{PRODUCT_EDITION==="personal"?"PERSONAL TOOL REGISTRY":"COMMUNITY TOOL REGISTRY"}</small><h2>{PRODUCT_EDITION==="personal"?"Đầy đủ tay chân của Minimum":"Chat & Coding Edition"}</h2><p>{PRODUCT_EDITION==="personal"?"Adapter private thực hiện và phải trả bằng chứng thật.":"Bản GitHub chỉ compile chat, file và coding; không chứa connector private."}</p></div><button onClick={()=>setToolsOpen(false)}><Icon name="close"/></button></header><div className="tool-grid">{toolCatalog.map(tool=>{const ready=tool.name==="Filesystem"&&Boolean(folderHandle);return <article className={ready?"ready":""} key={tool.name}><span>{tool.group}</span><b>{tool.name}</b><p>{tool.description}</p><em>{ready?`✓ Đã cấp quyền: ${folderHandle?.name}`:tool.phase}</em><button disabled={!ready} onClick={()=>tool.name==="Filesystem"&&chooseFolder()}>{ready?"Đang hoạt động":"Chưa cấu hình"}</button></article>})}</div>{PRODUCT_EDITION==="personal"&&<div className="rpa-policy"><b>RPA Safety Gate</b><span>UiPath · Power Automate · n8n · Make · Robocorp</span><p>Chỉ chạy workflow trong allowlist. Gửi/xóa/ghi đè/upload/publish và thao tác production luôn cần user xác nhận; job chỉ hoàn tất khi có run ID và output evidence.</p></div>}<footer><span>{PRODUCT_EDITION==="personal"?"Connector chỉ hoạt động sau integration test.":"Private adapters không nằm trong public bundle/repository."}</span><button onClick={()=>setToolsOpen(false)}>Đóng</button></footer></div></div>}
     {newProjectOpen&&<div className="overlay" onMouseDown={e=>e.target===e.currentTarget&&setNewProjectOpen(false)}><div className="new-project-modal"><h2>Tạo dự án mới</h2><p>Mỗi dự án có lịch sử và folder làm việc riêng trên thiết bị này.</p><label>Tên dự án</label><input autoFocus value={newProjectName} onChange={e=>setNewProjectName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&createProject()} placeholder="Ví dụ: Research Paper"/><div><button onClick={()=>setNewProjectOpen(false)}>Hủy</button><button className="primary" onClick={createProject} disabled={!newProjectName.trim()}>Tạo dự án</button></div></div></div>}
   </main>;
 }

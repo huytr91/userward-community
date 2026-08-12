@@ -2663,3 +2663,66 @@ tool evidence
 ```
 
 Không lưu hidden chain-of-thought. Chỉ lưu rule/policy match và quyết định vận hành đủ để audit.
+
+# 91. PRODUCT EDITION SPLIT
+
+Minimum có hai edition với ranh giới build-time, không phải UI toggle:
+
+## Personal Edition — private
+
+- Chat và coding.
+- Local Companion, filesystem, terminal/runtime.
+- Media: image, video, TTS/audio và assembly.
+- Documents: DOCX/XLSX/PPTX/PDF.
+- Email, calendar, browser, source control và deploy.
+- RPA adapters: UiPath, Power Automate, n8n, Make, Robocorp.
+- Legal/Safety Gate, consent ledger và evidence ledger bắt buộc.
+
+Personal adapters, provider secrets, workflow definitions và production credentials phải nằm trong private packages/repository và không được publish lên GitHub công khai.
+
+## Community/Commercial GitHub Edition — public
+
+- Chat đa model.
+- Đọc file được hỗ trợ.
+- Coding workspace: tạo/sửa file code sau khi user duyệt.
+- Public adapter interface để cộng đồng tự mở rộng.
+
+Không đóng gói media generation, TTS, Office/PDF runtime, email/calendar, browser automation, deploy connector hoặc RPA implementation. UI không được quảng cáo các capability không có trong build.
+
+# 92. RELEASE ISOLATION
+
+Edition được chọn tại build time (`VITE_MINIMUM_EDITION=personal|community`). Không cho phép user đổi edition trong runtime.
+
+```text
+Private monorepo
+├─ apps/minimum-core
+├─ packages/public-chat-coding
+└─ packages/private-adapters
+   ├─ media
+   ├─ documents
+   ├─ communications
+   ├─ deploy
+   └─ rpa
+
+GitHub release
+├─ minimum-core
+├─ public-chat-coding
+└─ adapter interfaces only
+```
+
+CI của Community Edition phải fail nếu bundle/source chứa private adapter implementation, endpoint nội bộ, secret name/value, workflow production hoặc proprietary policy. Personal và Community có artifact, signing key, environment và deployment pipeline riêng.
+
+# 93. EDITION ACCEPTANCE TESTS
+
+Community build PASS khi:
+
+- Chat và coding hoạt động.
+- Media/email/RPA request được trả lời rõ là không có trong edition.
+- Không import hoặc bundle private adapter.
+- Không thể bật private capability bằng sửa localStorage, query string hoặc DevTools.
+
+Personal build PASS khi:
+
+- Tool Registry hiển thị adapter thật theo integration test.
+- Legal Gate và confirmation gate chạy trước mọi side effect.
+- Mọi completion claim có evidence.
