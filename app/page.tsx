@@ -34,6 +34,12 @@ function parseInlineQuestions(text: string): InlineQuestion[] {
       current.options.push(...(inlineOptions.length>1?inlineOptions:[value]));
     }
   }
+  for (const question of questions) {
+    if (!question.options.length) question.options = /tool|công cụ|tính năng|feature|component/i.test(question.ask)
+      ? ["Có — dùng phương án AI đề xuất", "Không cần tính năng này", "Chưa chắc — để AI quyết định"]
+      : ["Dùng phương án AI đề xuất", "Không có yêu cầu đặc biệt", "Chưa chắc — để AI chọn"];
+    else if (question.options.length === 1) question.options.push("Không có yêu cầu đặc biệt", "Để AI chọn phương án phù hợp");
+  }
   return questions.length >= 2 && questions.some(question=>question.options.length >= 2) ? questions : [];
 }
 
