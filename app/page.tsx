@@ -12,10 +12,26 @@ type WorkspaceFile = { path: string; handle: FileSystemFileHandle };
 type PatchFile = { path: string; content: string; operation: "create" | "update" };
 type PendingPatch = { files: PatchFile[]; summary: string };
 type InterviewQuestion = { id: string; label: string; ask: string; options: string[]; multi?: boolean };
+type InlineQuestion = { id: string; ask: string; options: string[]; multi: boolean };
 type CapabilityAssessment = { level: "supported" | "partial" | "unsupported"; title: string; canDo: string; cannotDo?: string; needs?: string };
 type LegalAssessment = PolicyAssessment;
 type ProductEdition = "personal" | "community";
 const PRODUCT_EDITION: ProductEdition = import.meta.env.VITE_MINIMUM_EDITION === "community" ? "community" : "personal";
+
+function parseInlineQuestions(text: string): InlineQuestion[] {
+  const lines = text.split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
+  const questions: InlineQuestion[] = []; let current: InlineQuestion | null = null;
+  for (const raw of lines) {
+    const line = raw.replace(/\*\*/g, "").replace(/^#+\s*/, "");
+    const question = line.match(/^(\d+)[.)]\s*(.+?)(?:\s*[—–-]\s*)?$/);
+    const option = line.match(/^[-–•]?\s*(?:[a-zA-Z][.)]|\[[ xX]?\]|☐|○)\s*(.+)$/);
+    if (question) {
+      current = { id: `q${question[1]}`, ask: question[2].trim(), options: [], multi: /chọn nhiều|multiple|select all|có thể chọn nhiều/i.test(question[2]) };
+      questions.push(current);
+    } else if (current && option) current.options.push(option[1].trim());
+  }
+  return questions.length >= 2 && questions.some(question=>question.options.length >= 2) ? questions : [];
+}
 
 const initialEntries: Entry[] = [
   { id: "m1", kind: "message", role: "user", text: "Mình muốn bộ chuyển PDF sang DOCX chạy hoàn toàn local và giữ đúng bố cục bảng.", time: "06 Aug · 09:14" },
@@ -163,6 +179,7 @@ export default function Home() {
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [connecting, setConnecting] = useState(false);
   const [sending, setSending] = useState(false);
+  const [inlineAnswers, setInlineAnswers] = useState<Record<string, Record<string,string>>>({});
   const [budgetTier, setBudgetTier] = useState<"economy" | "balanced" | "quality">("balanced");
   const [projectBriefConfirmed, setProjectBriefConfirmed] = useState(false);
   const [legalConsent, setLegalConsent] = useState(false);
@@ -374,6 +391,13 @@ export default function Home() {
     sendMessage(false, comment, `${entry.title ? `${entry.title}\n` : ""}${entry.text}`);
   };
 
+  const submitInlineInterview = (entry: Entry, questions: InlineQuestion[]) => {
+    const answers = inlineAnswers[entry.id] || {};
+    const response = questions.map((question,index)=>`${index+1}. ${question.ask}\n→ ${answers[question.id] || "Chưa trả lời"}`).join("\n\n");
+    if (!questions.every(question=>answers[question.id]?.trim()) || sending) return;
+    sendMessage(false, `Câu trả lời phỏng vấn:\n\n${response}`, `${entry.title ? `${entry.title}\n` : ""}${entry.text}`);
+  };
+
   const attachFiles = async (list: FileList | null) => {
     if (!list) return;
     setUploadError("");
@@ -429,7 +453,7 @@ export default function Home() {
         {!entries.length&&<div className="empty-project"><b>Bạn muốn bắt đầu thế nào?</b><span>Chat để hỏi đáp bình thường, hoặc cho phép app tạo và sửa file trong một folder.</span><div className="empty-actions"><button onClick={()=>{setExecutionMode("analyze");if(!provider)setProvidersOpen(true);else setTimeout(()=>document.querySelector<HTMLTextAreaElement>('.composer textarea')?.focus(),20)}}><strong>Chat thường</strong><small>Hỏi đáp, phân tích và đính kèm tài liệu</small></button><button onClick={chooseFolder}><strong>Làm việc với dự án</strong><small>Chọn folder để tạo hoặc sửa file</small></button></div></div>}
         {entries.map((e, i) => <div key={e.id} id={e.id} className={`entry ${e.kind} ${e.role || ""} ${flash === e.id ? "flash" : ""}`}>
           {e.kind === "message" ? <>
-            <div className="avatar">{e.role === "user" ? "HT" : "M"}</div><div className="message-body"><div className="message-head"><b>{e.role === "user" ? "Bạn" : "Minimum"}</b><time>{e.time}</time></div><p>{e.text}</p>{e.role==="ai"&&<div className="entry-feedback"><button type="button" onClick={()=>setCommentingEntry(commentingEntry===e.id?"":e.id)}>✎ Nhận xét kết quả này</button>{commentingEntry===e.id&&<div className="entry-comment-box"><textarea autoFocus value={entryComments[e.id]||""} onChange={event=>setEntryComments(prev=>({...prev,[e.id]:event.target.value}))} placeholder="Gõ điều cần sửa, bổ sung hoặc phương án bạn muốn…"/><div><button type="button" onClick={()=>setCommentingEntry("")}>Hủy</button><button type="button" className="submit-comment" disabled={sending||!(entryComments[e.id]||"").trim()} onClick={()=>submitEntryComment(e)}>Gửi nhận xét</button></div></div>}</div>}</div>
+            <div className="avatar">{e.role === "user" ? "HT" : "M"}</div><div className="message-body"><div className="message-head"><b>{e.role === "user" ? "Bạn" : "Minimum"}</b><time>{e.time}</time></div><p>{e.text}</p>{e.role==="ai"&&parseInlineQuestions(e.text).length>0&&<div className="inline-interview"><header><b>Trả lời nhanh ngay tại đây</b><span>Tích chọn hoặc nhập câu trả lời ngắn</span></header>{parseInlineQuestions(e.text).map((question,index)=>{const value=inlineAnswers[e.id]?.[question.id]||"";return <div className="inline-question" key={question.id}><b>{index+1}. {question.ask}</b>{question.options.length>0?<div className="inline-choices">{question.options.map(option=>{const selected=question.multi?value.split(" · ").includes(option):value===option;return <button type="button" className={selected?"selected":""} key={option} onClick={()=>setInlineAnswers(prev=>{const current=prev[e.id]||{};if(!question.multi)return {...prev,[e.id]:{...current,[question.id]:option}};const chosen=(current[question.id]||"").split(" · ").filter(Boolean);const next=chosen.includes(option)?chosen.filter(item=>item!==option):[...chosen,option];return {...prev,[e.id]:{...current,[question.id]:next.join(" · ")}}})}><i>{selected?"✓":""}</i>{option}</button>})}</div>:<input value={value} onChange={event=>setInlineAnswers(prev=>({...prev,[e.id]:{...(prev[e.id]||{}),[question.id]:event.target.value}}))} placeholder="Nhập câu trả lời ngắn…"/>}</div>})}<button type="button" className="submit-inline" disabled={sending||!parseInlineQuestions(e.text).every(question=>inlineAnswers[e.id]?.[question.id]?.trim())} onClick={()=>submitInlineInterview(e,parseInlineQuestions(e.text))}>Gửi các câu trả lời này</button></div>}{e.role==="ai"&&<div className="entry-feedback"><button type="button" onClick={()=>setCommentingEntry(commentingEntry===e.id?"":e.id)}>✎ Nhận xét kết quả này</button>{commentingEntry===e.id&&<div className="entry-comment-box"><textarea autoFocus value={entryComments[e.id]||""} onChange={event=>setEntryComments(prev=>({...prev,[e.id]:event.target.value}))} placeholder="Gõ điều cần sửa, bổ sung hoặc phương án bạn muốn…"/><div><button type="button" onClick={()=>setCommentingEntry("")}>Hủy</button><button type="button" className="submit-comment" disabled={sending||!(entryComments[e.id]||"").trim()} onClick={()=>submitEntryComment(e)}>Gửi nhận xét</button></div></div>}</div>}</div>
           </> : <><div className="rail"><span>{e.kind === "decision" ? "◆" : e.kind === "task" ? "✓" : e.kind === "file" ? "↗" : "●"}</span></div><div className="card"><div className="card-top"><div><small>{e.meta}</small><h3>{e.title}</h3></div><time>{e.time}</time></div><p>{e.text}</p>{e.kind === "task" && i === 9 && <div className="progress"><i/><span>Đang thực thi</span></div>}{(["result","file","task"] as Kind[]).includes(e.kind)&&<div className="entry-feedback"><button type="button" onClick={()=>setCommentingEntry(commentingEntry===e.id?"":e.id)}>✎ Nhận xét kết quả này</button>{commentingEntry===e.id&&<div className="entry-comment-box"><textarea autoFocus value={entryComments[e.id]||""} onChange={event=>setEntryComments(prev=>({...prev,[e.id]:event.target.value}))} placeholder="Gõ điều cần sửa, bổ sung hoặc phương án bạn muốn…"/><div><button type="button" onClick={()=>setCommentingEntry("")}>Hủy</button><button type="button" className="submit-comment" disabled={sending||!(entryComments[e.id]||"").trim()} onClick={()=>submitEntryComment(e)}>Gửi nhận xét</button></div></div>}</div>}</div></>}
         </div>)}
       </div>
