@@ -2751,3 +2751,24 @@ coding/tool intent
 ```
 
 Không dùng regex từ khóa đơn lẻ làm quyết định cuối. Rule cục bộ chỉ được fast-path khi confidence cao; trường hợp nhiều nghĩa phải chuyển intent classifier/model nhỏ hoặc hỏi một câu làm rõ, không được tự chặn.
+
+# 95. MULTILINGUAL POLICY RAG & DECISION ENGINE
+
+Legal/Safety Gate không được dùng keyword list làm thẩm phán. Kiến trúc bắt buộc:
+
+```text
+User input (mọi ngôn ngữ)
+→ locale + intent detection
+→ retrieve policy theo jurisdiction, lĩnh vực, effective date
+→ semantic classifier trả structured JSON + confidence + evidence
+→ deterministic decision engine
+→ allow / consent / clarification / human review / block
+```
+
+Policy corpus phải có `policy_id`, phiên bản, ngày hiệu lực, jurisdiction, nhóm rủi ro, nguồn pháp lý/provider, bản dịch được duyệt và lịch sử thay đổi. RAG chỉ truy xuất căn cứ; không được tự kết luận hợp pháp hoặc chặn chỉ vì một từ/cụm từ xuất hiện.
+
+Mỗi quyết định phải ghi `detected_locale`, `retrieved_policy_ids`, retrieval score, classifier confidence, decision basis và policy version. Chỉ auto-block khi có nhiều tín hiệu độc lập, intent gây hại rõ và policy critical phù hợp. Trường hợp thiếu ngữ cảnh phải chuyển **CLARIFICATION/REVIEW**, hỏi user bằng ngôn ngữ đời thường về mục đích, đối tượng, quyền/consent và hành động cuối.
+
+MVP hỗ trợ Vietnamese, English, Spanish, French, German, Japanese, Korean và Simplified Chinese; ngôn ngữ chưa hỗ trợ phải dùng English fallback và gắn nhãn độ tin cậy thấp. UI, câu hỏi làm rõ, consent, lý do block và audit export đều phải locale-aware.
+
+Acceptance tests bắt buộc có paraphrase, phủ định, trích dẫn/học thuật, typo, code-switching và adversarial prompt ở từng ngôn ngữ. `tạo tool làm video bằng Python` phải được hiểu là coding; `documentary explaining phishing detection` không được chặn như phishing attack; impersonation + financial fraud rõ ràng mới được auto-block. Policy và bản dịch phải được legal reviewer duyệt trước commercial release.
