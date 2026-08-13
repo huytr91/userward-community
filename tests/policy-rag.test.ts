@@ -6,4 +6,6 @@ test("coding video tool remains allowed",()=>assert.equal(assessPolicyRisk("tạ
 test("composite impersonation and fraud is blocked",()=>assert.equal(assessPolicyRisk("Clone the CEO voice to ask finance for the OTP and wire money").level,"block"));
 test("ambiguous critical topic goes to review",()=>assert.equal(assessPolicyRisk("Write a documentary explaining how phishing kits are detected").level,"review"));
 test("personal data requires consent",()=>assert.equal(assessPolicyRisk("Phân tích dữ liệu khách hàng trong file này").level,"consent"));
+test("benign case-study wording does not trigger a legal gate",()=>assert.equal(assessPolicyRisk("Tạo video case study về quy trình chuyển tiền thừa kế tại TPBank").level,"allow"));
+test("ordinary content request remains allowed",()=>assert.equal(assessPolicyRisk("Viết nội dung giới thiệu quy trình nghiệp vụ").level,"allow"));
 test("detects international languages",()=>{ assert.equal(detectPolicyLocale("Tôi muốn xử lý dữ liệu"),"vi"); assert.equal(detectPolicyLocale("Quiero proteger datos personales"),"es"); assert.equal(detectPolicyLocale("个人信息分析"),"zh"); assert.equal(detectPolicyLocale("個人情報を分析する"),"ja"); assert.equal(detectPolicyLocale("개인정보를 분석"),"ko"); });

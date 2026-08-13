@@ -65,3 +65,5 @@ html,body{background:#eef3f0;color:var(--ink);font-family:var(--font-ui);font-si
 .composer-wrap{overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding-bottom:12px}
 .composer{position:sticky;bottom:0;z-index:8;box-shadow:0 -8px 28px rgba(17,62,48,.12)}
 .composer:focus-within{box-shadow:0 -10px 34px rgba(17,62,48,.18),0 0 0 2px rgba(25,128,100,.12)}
+.legal-card.allow{display:none}
+.legal-card .policy-rag-meta,.legal-card .policy-matches,.legal-card>ul{display:none!important}
