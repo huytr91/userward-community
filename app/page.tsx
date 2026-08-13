@@ -18,6 +18,12 @@ type LegalAssessment = PolicyAssessment;
 type ProductEdition = "personal" | "community";
 const PRODUCT_EDITION: ProductEdition = import.meta.env.VITE_MINIMUM_EDITION === "community" ? "community" : "personal";
 
+const folderStore = {
+  open: () => new Promise<IDBDatabase>((resolve,reject)=>{ const request=indexedDB.open("minimum-workspace",1); request.onupgradeneeded=()=>request.result.createObjectStore("folders"); request.onsuccess=()=>resolve(request.result); request.onerror=()=>reject(request.error); }),
+  get: async (projectId:string) => { const db=await folderStore.open(); return await new Promise<FileSystemDirectoryHandle|null>((resolve,reject)=>{ const request=db.transaction("folders").objectStore("folders").get(projectId); request.onsuccess=()=>resolve(request.result||null); request.onerror=()=>reject(request.error); }); },
+  set: async (projectId:string,handle:FileSystemDirectoryHandle) => { const db=await folderStore.open(); await new Promise<void>((resolve,reject)=>{ const request=db.transaction("folders","readwrite").objectStore("folders").put(handle,projectId); request.onsuccess=()=>resolve(); request.onerror=()=>reject(request.error); }); },
+};
+
 function parseInlineQuestions(text: string): InlineQuestion[] {
   const lines = text.split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
   const questions: InlineQuestion[] = []; let current: InlineQuestion | null = null;
@@ -274,9 +280,13 @@ export default function Home() {
 
   const selectProject = async (id: string) => {
     const next = projectList.find(project => project.id === id); if (!next) return;
-    const handle = folderHandlesRef.current[id] || null;
-    setActiveProjectId(id); setEntries(next.entries); setFolderHandle(handle); setWorkspaceFiles([]); setSelectedWorkspaceFile(""); setWorkspaceFileText(""); setPendingPatch(null); setExecutionMode("analyze");
-    if (handle) await scanFolder(handle);
+    const handle = folderHandlesRef.current[id] || await folderStore.get(id).catch(()=>null);
+    if (handle) folderHandlesRef.current[id]=handle;
+    const permission = handle ? await (handle as any).queryPermission?.({mode:"readwrite"}).catch(()=>"prompt") : "denied";
+    const available = permission === "granted" ? handle : null;
+    setActiveProjectId(id); setEntries(next.entries); setFolderHandle(available); setWorkspaceFiles([]); setSelectedWorkspaceFile(""); setWorkspaceFileText(""); setPendingPatch(null); setExecutionMode(handle || next.folderName ? "execute" : "analyze");
+    if (available) await scanFolder(available);
+    else if (handle) setWorkspaceError(`Đã nhớ folder ${handle.name}. Bấm “Làm việc với dự án” để cấp lại quyền.`);
   };
 
   const createProject = () => {
@@ -305,12 +315,28 @@ export default function Home() {
     await walk(root); setWorkspaceFiles(found); return found;
   };
 
+  useEffect(() => {
+    let cancelled=false;
+    folderStore.get(activeProjectId).then(async handle=>{
+      if (!handle || cancelled) return;
+      folderHandlesRef.current[activeProjectId]=handle;
+      setExecutionMode("execute");
+      const permission=await (handle as any).queryPermission?.({mode:"readwrite"}).catch(()=>"prompt");
+      if (cancelled) return;
+      if (permission==="granted") { setFolderHandle(handle); setWorkspaceError(""); await scanFolder(handle); }
+      else { setFolderHandle(null); setWorkspaceError(`Đã nhớ folder ${handle.name}. Bấm “Làm việc với dự án” để cấp lại quyền.`); }
+    }).catch(()=>{});
+    return ()=>{cancelled=true};
+  },[activeProjectId]);
+
   const chooseFolder = async () => {
     setWorkspaceError("");
     try {
       if (!("showDirectoryPicker" in window)) throw new Error("Trình duyệt này không hỗ trợ chọn folder. Hãy dùng Chrome hoặc Edge desktop.");
-      const handle = await (window as any).showDirectoryPicker({ mode: "readwrite" }) as FileSystemDirectoryHandle;
-      folderHandlesRef.current[activeProjectId] = handle; setFolderHandle(handle); setExecutionMode("execute"); const found = await scanFolder(handle);
+      const remembered = folderHandlesRef.current[activeProjectId] || await folderStore.get(activeProjectId).catch(()=>null);
+      const restored = remembered && await (remembered as any).requestPermission?.({mode:"readwrite"}).catch(()=>"denied") === "granted" ? remembered : null;
+      const handle = restored || await (window as any).showDirectoryPicker({ mode: "readwrite" }) as FileSystemDirectoryHandle;
+      folderHandlesRef.current[activeProjectId] = handle; await folderStore.set(activeProjectId,handle); setFolderHandle(handle); setExecutionMode("execute"); const found = await scanFolder(handle);
       setProjectList(prev => prev.map(project => project.id === activeProjectId ? { ...project, folderName: handle.name } : project));
       if (found[0]) await openWorkspaceFile(found[0]);
     } catch (error) { if ((error as DOMException)?.name !== "AbortError") setWorkspaceError(error instanceof Error ? error.message : "Không thể mở folder."); }
