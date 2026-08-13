@@ -6,6 +6,8 @@ Userward is a user-aligned AI manager for long-running chats and coding projects
 
 Userward serves the user rather than a model provider. The underlying **Minimum Context Engine** selects only the context needed for the current goal, while the product layer governs tools, model usage, cost, permissions, and execution evidence.
 
+Its binding differentiator is the **User Interest Constitution**: tool before model, least-expensive-qualified routing, minimum necessary context, no silent paid upgrade, no unapproved side effect, and no completion claim without evidence. Real responses can include an inspectable Execution Receipt.
+
 The interface detects the browser/operating-system language on first launch, remembers manual language changes, and currently provides core navigation in English, Vietnamese, Spanish, French, German, Japanese, Korean, and Chinese. Unsupported locales fall back to English.
 
 This public Community Edition contains **chat, file analysis, and folder-scoped coding**. Media generation, email/calendar actions, deployment, RPA, Power BI/Desktop control, and other private connectors are not included.

@@ -2777,3 +2777,73 @@ Acceptance tests bắt buộc có paraphrase, phủ định, trích dẫn/học 
 The product name is **Userward**, with the tagline **AI that answers to you**. The name expresses the product’s fiduciary direction: model, tool, privacy, budget, memory, and execution decisions must be made in the user’s interest rather than a provider’s interest.
 
 **Minimum Context Engine** remains the name of the context-selection subsystem. Existing browser storage identifiers beginning with `minimum-` are retained temporarily for backward compatibility and must be migrated without deleting user history or credentials.
+
+# 96. USER INTEREST CONSTITUTION — BINDING PRODUCT RULES
+
+Userward SHALL enforce these rules in product logic, tests, receipts, and audits—not only in marketing copy:
+
+1. Prefer a deterministic tool when it can meet the accepted outcome.
+2. Select the least expensive qualified route; never silently upgrade free to paid.
+3. Send only context and file slices required for the current goal.
+4. Perform no side effect without action-scoped user approval.
+5. Make no completion claim without execution evidence.
+6. Disclose the actual model, tool, fallback, failure, token usage, and provider-reported cost.
+7. Never treat weak retrieval as a legal conclusion.
+8. Do not ask an end user to choose technical implementation details Userward can safely decide.
+9. Provider commission SHALL NOT influence routing (`commercialInfluence: "none"`).
+
+Every automated decision SHALL be traceable to a Goal Contract, Routing Decision, Context Pack, approval, and/or Execution Receipt.
+
+# 97. GOAL CONTRACT AND CLARIFICATION
+
+Before model execution, Userward SHALL create a structured `GoalContract` containing objective, deliverables, constraints, acceptance criteria, allowed and forbidden actions, privacy level, quality target, budget policy, and optional deadline. Missing business information that can materially change the outcome SHALL trigger the Clarification Gate. Questions use plain language, recommended choices first, tick/select or Yes/No by default, plus a free-form override. Technical choices remain Userward's responsibility.
+
+# 98. CAPABILITY REGISTRY AND USER-ALIGNED ROUTING
+
+Capability profiles SHALL be machine-readable, versioned, and separated into `available`, `unavailable`, and `degraded`. Community MUST NOT advertise terminal execution, media rendering, messaging, deployment, or transactions until a real adapter and evidence test exist.
+
+```text
+Goal Contract → deterministic eligibility → capability/privacy fit
+→ minimum quality threshold → reliability/context fit
+→ least expensive qualified route → bounded fallback → explanation
+```
+
+The UI shows the recommended method, reason, cost disclosure basis, approval boundary, and simple cheaper/quality/local-only overrides. It does not make users manage a long model list.
+
+# 99. MINIMUM CONTEXT ENGINE / CONTEXT PACK
+
+Each provider request SHALL be compiled from the current goal, confirmed requirements, active constraints, relevant file slices, relevant prior failure, and acceptance criteria. The Context Pack records included and excluded sources with reasons plus a pre-send token estimate. Unselected files, unrelated history, duplicates, stale memory, and superseded assumptions are excluded by default. Displayed token or monetary savings MUST be measured or clearly labeled as estimates.
+
+# 100. EXECUTION PLANNER, APPROVALS, AND RECEIPTS
+
+Permissions are action-scoped: read, create, update, delete, run, install, send, publish/deploy, and transact. New permissions require new approval. File updates require preview; deletion, public publishing, messaging, and transactions require strong separate confirmation.
+
+Every completed or previewed task SHALL produce an Execution Receipt with status, actual model/tools, context sent and redactions, provider usage/cost, changes or “no changes”, and evidence. A model response proves generated text only; it is not evidence that a file was written, code ran, a message was sent, or a deployment occurred.
+
+# 101. FINANCIAL MANAGER, PRIVACY, AND MEMORY
+
+Budget controls SHALL support per-task, daily, and project ceilings, paid-model consent, retry limits, cache reuse, and overrun alerts. Pre-run cost is a range or “provider-reported after execution”; false precision is prohibited. Post-run usage is attributed by task, model, tool, retry, and context.
+
+The Privacy Broker SHALL add secret scanning, PII detection, redaction preview, provider data-flow disclosure, retention controls, open export, complete deletion, and OS-keychain credentials in Local Companion. Project telemetry is opt-in, minimized, and anonymized.
+
+Memory items contain type, value, source, confidence, status (`proposed`, `confirmed`, `superseded`, `stale`), timestamps, and supersession. AI inference never silently becomes fact; users can inspect, correct, pin, export, and delete it.
+
+# 102. SAFETY EXPERIENCE AND BUSINESS ALIGNMENT
+
+Safety is silent for allowed requests. Retrieval informs semantic assessment but never independently blocks. User-facing output hides policy IDs and scores; ambiguous cases ask plain-language rights/purpose questions. Technical audit remains available to authorized diagnostics.
+
+Revenue comes from explicit software, governance, Local Companion, team policy, or connector fees—not hidden token markup or provider-biased routing. User data and credentials remain exportable.
+
+# 103. TARGET ARCHITECTURE AND DELIVERY
+
+```text
+core: goal-contract, clarification-engine, context-compiler, capability-registry,
+      routing-engine, budget-engine, privacy-broker, safety-engine,
+      execution-planner, receipt-engine
+adapters: models, tools, storage, local-companion
+features: chat, projects, memory, usage, approvals, settings
+```
+
+The first implemented slice is `app/lib/userward-core.ts`: constitution, Goal Contract, honest Community registry, tool-first routing, Context Pack, and Execution Receipt. Later releases replace static facts with signed provider metadata, reliability telemetry, and benchmark results.
+
+North-star metric: **goals completed within user-confirmed quality, cost, privacy, and permission boundaries**. Supporting metrics include first-pass success, clarification burden, override rate, cost per completed outcome, measured tokens avoided, unsupported-action honesty, false safety intervention, memory citation accuracy, routing regret, and unapproved side effects (target: zero).
