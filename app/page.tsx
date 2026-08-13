@@ -257,6 +257,7 @@ export default function Home() {
   const [flash, setFlash] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
+  const composerWrapRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const folderHandlesRef = useRef<Record<string, FileSystemDirectoryHandle>>({});
 
@@ -313,6 +314,11 @@ export default function Home() {
   const activeProject = projectList.find(project => project.id === activeProjectId) || projectList[0];
   const tokenStats = useMemo(() => { const measured = entries.filter(entry=>entry.usage?.totalTokens); const total = measured.reduce((sum,entry)=>sum+(entry.usage?.totalTokens||0),0); const input = measured.reduce((sum,entry)=>sum+(entry.usage?.promptTokens||0),0); const output = measured.reduce((sum,entry)=>sum+(entry.usage?.completionTokens||0),0); const cost = measured.reduce((sum,entry)=>sum+(entry.usage?.cost||0),0); const top = [...measured].sort((a,b)=>(b.usage?.totalTokens||0)-(a.usage?.totalTokens||0))[0]; return { total, input, output, cost, top, measured: measured.length }; }, [entries]);
   useEffect(() => { setProjectBriefConfirmed(false); setLegalConsent(false); }, [draft]);
+  useEffect(() => {
+    const panel = composerWrapRef.current;
+    if (!panel || !draft.trim()) return;
+    requestAnimationFrame(() => panel.scrollTo({ top: panel.scrollHeight, behavior: "auto" }));
+  }, [draft, interviewQuestions.length, projectIntent.active, projectBriefConfirmed]);
 
   useEffect(() => {
     const savedProjects = localStorage.getItem("minimum-projects");
@@ -574,7 +580,7 @@ export default function Home() {
           {pendingPatch&&e.kind==="result"&&e.title?.includes("chờ xác nhận")&&<div className="inline-patch-approval"><div><b>{pendingPatch.files.length} file sẵn sàng tạo/cập nhật</b><span>{pendingPatch.files.map(file=>`${file.operation}: ${file.path}`).join(" · ")}</span></div><button type="button" onClick={()=>setPendingPatch(null)}>Hủy</button><button type="button" className="apply" onClick={applyPendingPatch}>Tạo/cập nhật file</button></div>}
         </div>)}
       </div>
-      <div className="composer-wrap">
+      <div className="composer-wrap" ref={composerWrapRef}>
         <div className="work-mode"><button className={executionMode==="analyze"?"active":""} onClick={()=>setExecutionMode("analyze")}><b>Chat thường</b><span>Hỏi đáp và phân tích</span></button><button className={executionMode==="execute"?"active":""} onClick={()=>folderHandle?setExecutionMode("execute"):chooseFolder()}><b>Làm việc với dự án</b><span>{folderHandle?`Folder: ${folderHandle.name}`:"Chọn folder trên máy"}</span></button>{executionMode==="execute"&&<button className="change-folder" onClick={chooseFolder}>Đổi folder</button>}</div>
         {draft.trim()&&<div className={`capability-card ${capabilityAssessment.level}`}><div><span>{capabilityAssessment.level==="supported"?"✓":capabilityAssessment.level==="partial"?"◐":"!"}</span><b>{capabilityAssessment.title}</b><em>{capabilityAssessment.level==="supported"?"Làm được":capabilityAssessment.level==="partial"?"Làm được một phần":"Ngoài khả năng hiện tại"}</em></div><p><strong>Làm được:</strong> {capabilityAssessment.canDo}</p>{capabilityAssessment.cannotDo&&<p><strong>Không làm được:</strong> {capabilityAssessment.cannotDo}</p>}{capabilityAssessment.needs&&<small>Để làm đầy đủ: {capabilityAssessment.needs}</small>}</div>}
         {draft.trim()&&<div className={`legal-card ${legalAssessment.level}`}><div><span>{legalAssessment.level==="allow"?"✓":legalAssessment.level==="consent"?"⚖":legalAssessment.level==="review"?"?":"×"}</span><b>{legalAssessment.title}</b><em>{legalAssessment.level==="allow"?"Allow":legalAssessment.level==="consent"?"Consent":legalAssessment.level==="review"?"Review":"Block"}</em></div><p>{legalAssessment.reason}</p><div className="policy-rag-meta"><span>Policy RAG · {legalAssessment.locale.toUpperCase()}</span><span>v{legalAssessment.policyVersion}</span><span>{Math.round(legalAssessment.confidence*100)}% confidence</span></div>{legalAssessment.matches.length>0&&<div className="policy-matches">{legalAssessment.matches.map(match=><span key={match.id} title={match.title}>{match.id} · {Math.round(match.score*100)}%</span>)}</div>}<ul>{legalAssessment.checks.map(check=><li key={check}>{check}</li>)}</ul>{legalAssessment.level==="consent"&&<label><input type="checkbox" checked={legalConsent} onChange={e=>setLegalConsent(e.target.checked)}/><span>Tôi xác nhận có quyền hợp pháp với dữ liệu/tài sản này và đồng ý cho provider đã chọn xử lý trong phạm vi yêu cầu.</span></label>}</div>}
