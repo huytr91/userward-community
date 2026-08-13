@@ -1,100 +1,81 @@
-# vinext-starter
+# Minimum AI Workspace — Community Edition
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+Minimum is a local-first AI workspace for long-running chats and coding projects. It helps users describe outcomes in ordinary language, clarifies material ambiguity, routes requests to a connected model, keeps project history searchable, and shows measured token/cost usage.
 
-## Prerequisites
+This public Community Edition contains **chat, file analysis, and folder-scoped coding**. Media generation, email/calendar actions, deployment, RPA, Power BI/Desktop control, and other private connectors are not included.
 
-- Node.js `>=22.13.0`
+## Current status
 
-## Quick Start
+Early preview. Do not treat the app as a security boundary or use it for production automation without an independent review.
+
+Working capabilities:
+
+- Bring your own API key for OpenRouter, OpenAI, Anthropic, Google, DeepSeek, Qwen, or Kimi.
+- Searchable project/chat history stored in the browser.
+- Optional browser-granted folder access for previewing file patches.
+- User approval before writing a proposed patch.
+- Local extraction for DOCX, XLSX, PPTX, OpenDocument, RTF, CSV/TSV, text, and common source files. Legacy binary `.xls` is intentionally excluded until a maintained parser is available.
+- PDF/image forwarding through a compatible multimodal provider.
+- Clarification, capability, legal-policy, and token/cost panels.
+
+Known limitations:
+
+- There is no Power BI, Office desktop, RPA, terminal, deployment, email, or calendar connector in this repository.
+- A selected folder is not a connection to an application with the same name.
+- PDF/image requests sent directly through OpenRouter can require funded credits.
+- The 256 MB picker limit is not a guarantee that a model/provider or hosting layer accepts a request of that size.
+- Provider keys pass through the app server proxy for the duration of a request. Review your hosting environment before use.
+- Browser `localStorage` is used for project history. It is not encrypted storage.
+
+## Requirements
+
+- Node.js 22.13 or newer
+- npm
+- A supported provider API key
+- Chrome or Edge desktop for File System Access folder features
+
+## Run locally
 
 ```bash
-npm install
+npm ci
 npm run dev
-npm run build
 ```
 
-This starter does not use `wrangler.jsonc`.
+Open the URL printed by the development server.
 
-## Included Shape
+## Community release checks
 
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
-
-## Workspace Auth Headers
-
-Signed-in visitors receive both `oai-authenticated-user-id` and `oai-authenticated-user-email`. Private Sites require every visitor to sign in; public Sites may also have anonymous visitors, for whom neither header is present.
-
-The user ID is stable for the same user on the same Site and different across Sites. Email and name are intended for display or contact purposes.
-
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const userId = requestHeaders.get("oai-authenticated-user-id");
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
+```bash
+npm run release:check
 ```
 
-## Optional Dispatch-Owned ChatGPT Sign-In
+This command scans tracked files for common secret patterns, builds with `VITE_MINIMUM_EDITION=community`, runs server-render tests, and runs the policy tests.
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
+To build only:
 
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
+```bash
+npm run build:community
+```
 
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
+## Security model
 
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
+- The browser asks for folder permission; the app cannot access arbitrary folders.
+- File writes require a visible patch preview and user confirmation.
+- Common credential patterns are redacted from selected text context before provider calls.
+- API keys must never be committed or pasted into project content.
+- Community code does not contain private connector implementations.
 
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
+See [SECURITY.md](SECURITY.md) before publishing or deploying your own instance.
 
-## Useful Commands
+## Repository editions
 
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
-- `npm run db:generate`: generate Drizzle migrations after schema changes
+- `community`: public chat, file-reading, and coding surface.
+- `personal`: private product configuration and connector catalog; implementation is maintained separately and is not licensed by this repository.
 
-## Learn More
+## Contributing
 
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+See [CONTRIBUTING.md](CONTRIBUTING.md). By contributing, you agree that your contribution is licensed under Apache-2.0.
+
+## License
+
+Community Edition source code is licensed under the [Apache License 2.0](LICENSE). Product names, private adapters, credentials, production workflows, and third-party trademarks are excluded unless explicitly stated.

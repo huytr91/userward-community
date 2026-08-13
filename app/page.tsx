@@ -18,7 +18,7 @@ type LegalAssessment = PolicyAssessment;
 type ProductEdition = "personal" | "community";
 const PRODUCT_EDITION: ProductEdition = import.meta.env.VITE_MINIMUM_EDITION === "community" ? "community" : "personal";
 
-const OFFICE_FILE = /\.(docx|xlsx|xls|pptx|odt|ods|odp|rtf)$/i;
+const OFFICE_FILE = /\.(docx|xlsx|pptx|odt|ods|odp|rtf)$/i;
 const TEXT_FILE = /\.(txt|md|markdown|csv|tsv|json|jsonl|ndjson|xml|yaml|yml|toml|ini|cfg|conf|log|sql|html|htm|css|scss|sass|less|svg|tex|bib|eml|ics|vcf|js|jsx|mjs|cjs|ts|tsx|py|ipynb|java|c|cc|cpp|cxx|h|hpp|cs|go|rs|rb|php|swift|kt|kts|dart|lua|r|sh|bash|zsh|fish|ps1|bat|cmd|vue|svelte)$/i;
 
 const xmlText = (xml: string) => {
@@ -37,10 +37,13 @@ async function extractOfficeText(file: File) {
     const result = await mammoth.extractRawText({ arrayBuffer: buffer });
     return result.value;
   }
-  if (extension === "xlsx" || extension === "xls") {
-    const XLSX = await import("xlsx");
-    const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
-    return workbook.SheetNames.map(name => `## Sheet: ${name}\n${XLSX.utils.sheet_to_csv(workbook.Sheets[name], { blankrows: false })}`).join("\n\n");
+  if (extension === "xlsx") {
+    const { default: readXlsxFile } = await import("read-excel-file/browser");
+    const sheets = await readXlsxFile(file);
+    return sheets.map(({ sheet, data }) => {
+      const text = data.map(row => row.map(cell => cell instanceof Date ? cell.toISOString() : String(cell ?? "").replace(/\t/g, " ")).join("\t")).join("\n");
+      return `## Sheet: ${sheet}\n${text}`;
+    }).join("\n\n");
   }
   if (extension === "rtf") {
     return new TextDecoder().decode(buffer)
@@ -308,8 +311,9 @@ export default function Home() {
   useEffect(() => {
     const savedProjects = localStorage.getItem("minimum-projects");
     if (savedProjects) { try { const demoIds = new Set(["m1","d1","t1","m2","d2","t2","f1","r1","m3","t3","m4"]); const parsed = (JSON.parse(savedProjects) as LocalProject[]).map(project => { const realEntries = project.entries.filter(entry => !demoIds.has(entry.id)); return { ...project, entries: realEntries.some(entry => entry.id === "security-policy") ? realEntries : [...realEntries, initialEntries.find(entry => entry.id === "security-policy")!] }; }); setProjectList(parsed); setActiveProjectId(parsed[0]?.id || "pdf"); setEntries(parsed[0]?.entries || []); } catch {} }
-    const savedConnection = localStorage.getItem("minimum-provider-connection");
-    if (savedConnection) { try { const saved = JSON.parse(savedConnection) as { provider?: string; model?: string; apiKey?: string }; if (saved.provider && saved.model && saved.apiKey) { setProvider(saved.provider); setCredentialProvider(saved.provider); setModel(saved.model); setApiKey(saved.apiKey); setRememberKey(true); } } catch { localStorage.removeItem("minimum-provider-connection"); } }
+    const credentialStorage = PRODUCT_EDITION === "personal" ? localStorage : sessionStorage;
+    const savedConnection = credentialStorage.getItem("minimum-provider-connection");
+    if (savedConnection) { try { const saved = JSON.parse(savedConnection) as { provider?: string; model?: string; apiKey?: string }; if (saved.provider && saved.model && saved.apiKey) { setProvider(saved.provider); setCredentialProvider(saved.provider); setModel(saved.model); setApiKey(saved.apiKey); setRememberKey(true); } } catch { credentialStorage.removeItem("minimum-provider-connection"); } }
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setSearchOpen(true); setTimeout(() => searchRef.current?.focus(), 20); }
       if (e.key === "Escape") setSearchOpen(false);
@@ -353,7 +357,7 @@ export default function Home() {
   const scanFolder = async (root: FileSystemDirectoryHandle) => {
     const found: WorkspaceFile[] = []; const allowed = /\.(txt|md|csv|json|js|jsx|ts|tsx|py|html|css|xml|yaml|yml|sql|log)$/i;
     const walk = async (dir: FileSystemDirectoryHandle, prefix = "") => {
-      for await (const [name, handle] of dir.entries()) {
+      for await (const [name, handle] of (dir as FileSystemDirectoryHandle & { entries(): AsyncIterableIterator<[string, FileSystemHandle]> }).entries()) {
         if (found.length >= 200 || name === "node_modules" || name === ".git" || name === "dist") continue;
         const path = prefix ? `${prefix}/${name}` : name;
         if (handle.kind === "directory") await walk(handle as FileSystemDirectoryHandle, path);
@@ -524,14 +528,15 @@ export default function Home() {
   const saveProvider = () => {
     if (!credentialProvider || !apiKey.trim() || !model) return;
     setProvider(credentialProvider);
-    if (rememberKey) localStorage.setItem("minimum-provider-connection", JSON.stringify({ provider: credentialProvider, model, apiKey }));
-    else localStorage.removeItem("minimum-provider-connection");
+    const credentialStorage = PRODUCT_EDITION === "personal" ? localStorage : sessionStorage;
+    if (rememberKey) credentialStorage.setItem("minimum-provider-connection", JSON.stringify({ provider: credentialProvider, model, apiKey }));
+    else credentialStorage.removeItem("minimum-provider-connection");
     setProvidersOpen(false); setCredentialProvider(""); setAvailableModels([]);
   };
 
   const disconnectProvider = () => {
     setProvider(""); setModel(""); setApiKey("");
-    localStorage.removeItem("minimum-provider-connection");
+    localStorage.removeItem("minimum-provider-connection"); sessionStorage.removeItem("minimum-provider-connection");
   };
 
   return <main className="shell">
@@ -566,7 +571,7 @@ export default function Home() {
         {draft.trim() && !projectIntent.active && <div className="usage-plan"><div className="usage-plan-head"><span>USAGE PROFILE</span><b>{usagePlan.profile}</b><em>Risk: {usagePlan.risk}</em></div><div className="usage-grid"><div><small>ƯU TIÊN</small><b>{usagePlan.priority}</b></div><div><small>CÔNG CỤ</small><b>{usagePlan.tool}</b></div><div><small>KIỂM CHỨNG</small><b>{usagePlan.verification}</b></div><div><small>OUTPUT</small><b>{usagePlan.output}</b></div></div><p>✓ Fact cần nguồn · ✓ Suy luận phải gắn nhãn · ✓ Tự chọn tool trước khi chọn model <span>Phân tích cục bộ · 0 token</span></p></div>}
         {clarification && (clarification.needed ? <div className="clarify-card"><div className="clarify-head"><span>?</span><div><b>Cần làm rõ trước khi thực hiện</b><small>{clarification.reason} · Rule cục bộ · 0 token</small></div><em>Auto</em></div><p>Bạn muốn tiếp tục phần nào?</p><div className="clarify-options"><button onClick={()=>setClarifiedScope("Sửa căn chỉnh ô gộp sát lề phải")}>Căn chỉnh ô gộp <small>Đề xuất</small></button><button onClick={()=>setClarifiedScope("Sửa đường viền của bảng")}>Đường viền bảng</button><button onClick={()=>setClarifiedScope("Kiểm tra cả căn chỉnh và đường viền")}>Cả hai</button></div><div className="kept-constraint">✓ Giữ nguyên ràng buộc: không sửa module OCR</div></div> : <div className="task-preview"><span>✓</span><p><b>Đã hiểu yêu cầu</b> {clarification.summary}</p><button onClick={()=>setClarifiedScope("")}>Chỉnh lại</button></div>)}
         {!provider ? <div className="connection-warning"><span>!</span><p><b>Chưa có model được kết nối</b> Hãy nhập API key để bắt đầu xử lý thật.</p><button onClick={()=>setProvidersOpen(true)}>Kết nối model</button></div> : <div className="connected-bar"><span>✓</span><p><b>{provider}</b> · {model}</p><button onClick={disconnectProvider}>Ngắt kết nối</button></div>}
-        <div className="execution-mode"><div><b>{executionMode === "execute" ? "Thực thi project có xác nhận" : "Chat & phân tích"}</b><span>{executionMode === "execute" ? `Có thể tạo hoặc sửa nhiều file trong ${folderHandle?.name || "folder đã chọn"}` : "Đọc file đính kèm và trả kết quả trong timeline"}</span></div><button disabled={!folderHandle} onClick={()=>setExecutionMode(mode=>mode === "analyze" ? "execute" : "analyze")}>{executionMode === "execute" ? "Chuyển sang Analyze" : folderHandle ? "Bật Execute" : "Kết nối folder để Execute"}</button></div>{pendingPatch&&<div className="patch-preview"><div><b>{pendingPatch.files.length} file chờ duyệt</b><span>{pendingPatch.summary}</span><small>{pendingPatch.files.map(file=>`${file.operation}: ${file.path}`).join(" · ")}</small></div><button onClick={()=>setPendingPatch(null)}>Hủy</button><button className="apply" onClick={applyPendingPatch}>Tạo/cập nhật file</button></div>}{attachments.length>0&&<div className="attachment-list">{attachments.map(file=><span key={file.name}>↗ {file.name} <small>{Math.ceil(file.size/1024)} KB</small><button onClick={()=>setAttachments(prev=>prev.filter(item=>item.name!==file.name))}>×</button></span>)}</div>}{uploadError&&<div className="upload-error">{uploadError}</div>}<div className="composer"><textarea aria-label="Nhập yêu cầu" value={draft} onChange={e=>{setDraft(e.target.value);setClarifiedScope("")}} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}}} placeholder={provider ? "Nêu mục tiêu hoặc đính kèm file để phân tích..." : "Kết nối model trước khi gửi yêu cầu..."}/><div className="composer-actions"><div><select aria-label="Chọn hãng hoặc model" value={provider || ""} disabled><option>{provider ? `${provider} · ${model}` : "Chưa có model"}</option></select><input ref={fileRef} className="file-input" type="file" multiple accept=".txt,.md,.markdown,.csv,.tsv,.json,.jsonl,.ndjson,.xml,.yaml,.yml,.toml,.ini,.cfg,.conf,.log,.sql,.html,.htm,.css,.scss,.sass,.less,.svg,.tex,.bib,.eml,.ics,.vcf,.js,.jsx,.mjs,.cjs,.ts,.tsx,.py,.ipynb,.java,.c,.cc,.cpp,.cxx,.h,.hpp,.cs,.go,.rs,.rb,.php,.swift,.kt,.kts,.dart,.lua,.r,.sh,.bash,.zsh,.fish,.ps1,.bat,.cmd,.vue,.svelte,.pdf,.png,.jpg,.jpeg,.webp,.gif,.docx,.xlsx,.xls,.pptx,.odt,.ods,.odp,.rtf,text/*,application/pdf,image/*" onChange={e=>attachFiles(e.target.files)}/><button onClick={()=>fileRef.current?.click()}>＋ Đính kèm file</button><button className="context-on"><i/> Context tự động</button></div><button className="send" aria-label="Gửi" onClick={sendMessage} disabled={!provider || (!draft.trim()&&!attachments.length) || sending || Boolean(clarification?.needed) || !interviewComplete || legalAssessment.level==="block" || (legalAssessment.level==="consent"&&!legalConsent)}><Icon name="send"/></button></div></div><p>Clarification: Auto · CSV/TSV/Word/Excel/PowerPoint/PDF/ảnh/code và tài liệu phổ thông · Tối đa 256 MB · Execute luôn cần duyệt</p>
+        <div className="execution-mode"><div><b>{executionMode === "execute" ? "Thực thi project có xác nhận" : "Chat & phân tích"}</b><span>{executionMode === "execute" ? `Có thể tạo hoặc sửa nhiều file trong ${folderHandle?.name || "folder đã chọn"}` : "Đọc file đính kèm và trả kết quả trong timeline"}</span></div><button disabled={!folderHandle} onClick={()=>setExecutionMode(mode=>mode === "analyze" ? "execute" : "analyze")}>{executionMode === "execute" ? "Chuyển sang Analyze" : folderHandle ? "Bật Execute" : "Kết nối folder để Execute"}</button></div>{pendingPatch&&<div className="patch-preview"><div><b>{pendingPatch.files.length} file chờ duyệt</b><span>{pendingPatch.summary}</span><small>{pendingPatch.files.map(file=>`${file.operation}: ${file.path}`).join(" · ")}</small></div><button onClick={()=>setPendingPatch(null)}>Hủy</button><button className="apply" onClick={applyPendingPatch}>Tạo/cập nhật file</button></div>}{attachments.length>0&&<div className="attachment-list">{attachments.map(file=><span key={file.name}>↗ {file.name} <small>{Math.ceil(file.size/1024)} KB</small><button onClick={()=>setAttachments(prev=>prev.filter(item=>item.name!==file.name))}>×</button></span>)}</div>}{uploadError&&<div className="upload-error">{uploadError}</div>}<div className="composer"><textarea aria-label="Nhập yêu cầu" value={draft} onChange={e=>{setDraft(e.target.value);setClarifiedScope("")}} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}}} placeholder={provider ? "Nêu mục tiêu hoặc đính kèm file để phân tích..." : "Kết nối model trước khi gửi yêu cầu..."}/><div className="composer-actions"><div><select aria-label="Chọn hãng hoặc model" value={provider || ""} disabled><option>{provider ? `${provider} · ${model}` : "Chưa có model"}</option></select><input ref={fileRef} className="file-input" type="file" multiple accept=".txt,.md,.markdown,.csv,.tsv,.json,.jsonl,.ndjson,.xml,.yaml,.yml,.toml,.ini,.cfg,.conf,.log,.sql,.html,.htm,.css,.scss,.sass,.less,.svg,.tex,.bib,.eml,.ics,.vcf,.js,.jsx,.mjs,.cjs,.ts,.tsx,.py,.ipynb,.java,.c,.cc,.cpp,.cxx,.h,.hpp,.cs,.go,.rs,.rb,.php,.swift,.kt,.kts,.dart,.lua,.r,.sh,.bash,.zsh,.fish,.ps1,.bat,.cmd,.vue,.svelte,.pdf,.png,.jpg,.jpeg,.webp,.gif,.docx,.xlsx,.pptx,.odt,.ods,.odp,.rtf,text/*,application/pdf,image/*" onChange={e=>attachFiles(e.target.files)}/><button onClick={()=>fileRef.current?.click()}>＋ Đính kèm file</button><button className="context-on"><i/> Context tự động</button></div><button className="send" aria-label="Gửi" onClick={sendMessage} disabled={!provider || (!draft.trim()&&!attachments.length) || sending || Boolean(clarification?.needed) || !interviewComplete || legalAssessment.level==="block" || (legalAssessment.level==="consent"&&!legalConsent)}><Icon name="send"/></button></div></div><p>Clarification: Auto · CSV/TSV/Word/XLSX/PowerPoint/PDF/ảnh/code và tài liệu phổ thông · Tối đa 256 MB · Execute luôn cần duyệt</p>
       </div>
     </section>
 

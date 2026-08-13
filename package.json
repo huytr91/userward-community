@@ -1,6 +1,8 @@
 {
-  "name": "site-creator-vinext-starter",
+  "name": "minimum-ai-workspace-community",
   "version": "0.1.0",
+  "description": "Local-first AI workspace for chat, file analysis, and folder-scoped coding.",
+  "license": "Apache-2.0",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -9,7 +11,10 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "start": "vinext start",
-    "test": "npm run build && node --test tests/rendered-html.test.mjs",
+    "build:community": "node scripts/build-community.mjs",
+    "test": "npm run build:community && node --test tests/rendered-html.test.mjs && npm run test:policy",
+    "check:public": "node scripts/check-public.mjs",
+    "release:check": "npm run check:public && npm test",
     "test:policy": "node --experimental-strip-types --test tests/policy-rag.test.ts",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
@@ -20,7 +25,7 @@
     "mammoth": "^1.12.1",
     "react": "19.2.6",
     "react-dom": "19.2.6",
-    "xlsx": "^0.18.5"
+    "read-excel-file": "^9.3.10"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",
