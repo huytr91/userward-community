@@ -15,6 +15,7 @@
     "test": "npm run build:community && node --test tests/rendered-html.test.mjs && npm run test:policy",
     "check:public": "node scripts/check-public.mjs",
     "release:check": "npm run check:public && npm test",
+    "export:community": "node scripts/export-community.mjs",
     "test:policy": "node --experimental-strip-types --test tests/policy-rag.test.ts",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
