@@ -34,7 +34,7 @@ Audit date: 2026-08-13
 
 4. **Encrypted secret storage:** Community only remembers keys for the current tab. Personal persistent-key storage should move to OS keychain/Local Companion rather than browser `localStorage`.
 5. **Provider capability discovery:** file and modality support is not negotiated per selected model before sending.
-6. **Internationalization:** policy matching is multilingual, but most UI strings are Vietnamese and some legacy source literals require an encoding cleanup.
+6. **Internationalization:** core navigation now auto-detects and persists 8 languages with English fallback. Deep workflow, provider, safety, and legacy timeline copy still needs extraction into the translation catalog before claiming complete localization.
 7. **Persistence and privacy:** project history is browser-local and unencrypted. There is no export/delete-all/privacy control surface yet.
 8. **End-to-end coverage:** no browser E2E test currently exercises provider connection, file extraction, project switching, folder permission restoration, or patch approval.
 

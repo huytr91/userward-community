@@ -17,8 +17,8 @@ test("renders the Minimum community workspace", async () => {
   const html = await response.text();
   assert.match(html, /<title>Minimum — AI Efficiency Workspace<\/title>/i);
   assert.match(html, />COMMUNITY</);
-  assert.match(html, /Chat mới/);
-  assert.match(html, /Kết nối model/);
+  assert.match(html, /New chat/);
+  assert.match(html, /Connect model/);
   assert.match(html, /Chat · Files · Coding only/);
   assert.doesNotMatch(html, /PERSONAL TOOL REGISTRY/);
 });

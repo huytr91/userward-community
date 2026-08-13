@@ -2,6 +2,8 @@
 
 Minimum is a local-first AI workspace for long-running chats and coding projects. It helps users describe outcomes in ordinary language, clarifies material ambiguity, routes requests to a connected model, keeps project history searchable, and shows measured token/cost usage.
 
+The interface detects the browser/operating-system language on first launch, remembers manual language changes, and currently provides core navigation in English, Vietnamese, Spanish, French, German, Japanese, Korean, and Chinese. Unsupported locales fall back to English.
+
 This public Community Edition contains **chat, file analysis, and folder-scoped coding**. Media generation, email/calendar actions, deployment, RPA, Power BI/Desktop control, and other private connectors are not included.
 
 ## Current status

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { assessPolicyRisk, type PolicyAssessment } from "./lib/policy-rag";
+import { detectLocale, localeNames, supportedLocales, translate, type AppLocale } from "./lib/i18n";
 
 type Kind = "message" | "task" | "decision" | "result" | "file";
 type TokenUsage = { promptTokens: number; completionTokens: number; totalTokens: number; cost?: number };
@@ -217,6 +218,8 @@ function redactSecrets(input: string) {
 
 export default function Home() {
   const toolCatalog = PRODUCT_EDITION === "personal" ? personalToolCatalog : communityToolCatalog;
+  const [locale, setLocale] = useState<AppLocale>("en");
+  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
   const [entries, setEntries] = useState<Entry[]>(initialEntries);
   const [projectList, setProjectList] = useState<LocalProject[]>(seedProjects);
   const [activeProjectId, setActiveProjectId] = useState("pdf");
@@ -266,6 +269,19 @@ export default function Home() {
   const timelineRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const folderHandlesRef = useRef<Record<string, FileSystemDirectoryHandle>>({});
+
+  useEffect(() => {
+    const saved = localStorage.getItem("minimum-ui-locale") as AppLocale | null;
+    const detected = saved && supportedLocales.includes(saved) ? saved : detectLocale(navigator.languages);
+    setLocale(detected);
+    document.documentElement.lang = detected;
+  }, []);
+
+  const changeLocale = (next: AppLocale) => {
+    setLocale(next);
+    localStorage.setItem("minimum-ui-locale", next);
+    document.documentElement.lang = next;
+  };
 
   const results = useMemo(() => {
     const q = query.toLowerCase().trim();
@@ -542,16 +558,17 @@ export default function Home() {
   return <main className="shell">
     <aside className="projects">
       <div className="brand"><div className="brandmark">M</div><span>Minimum</span><em>{PRODUCT_EDITION==="personal"?"PERSONAL":"COMMUNITY"}</em></div>
-      <button className="new-project" onClick={createChat}><Icon name="plus"/> Chat mới</button>
-      <button className="new-project-link" onClick={()=>setNewProjectOpen(true)}>＋ Tạo dự án có folder</button>
-      <button className="provider-button" onClick={()=>setProvidersOpen(true)}>⌘ <span>{provider || "Kết nối model"}</span><b>{provider ? "✓" : "0"}</b></button>
+      <label className="language-picker"><span>{t("language")}</span><select value={locale} onChange={event=>changeLocale(event.target.value as AppLocale)} aria-label={t("language")}>{supportedLocales.map(item=><option key={item} value={item}>{localeNames[item]}</option>)}</select></label>
+      <button className="new-project" onClick={createChat}><Icon name="plus"/> {t("newChat")}</button>
+      <button className="new-project-link" onClick={()=>setNewProjectOpen(true)}>＋ {t("newProject")}</button>
+      <button className="provider-button" onClick={()=>setProvidersOpen(true)}>⌘ <span>{provider || t("connectModel")}</span><b>{provider ? "✓" : "0"}</b></button>
       <button className="history-toggle" type="button" onClick={()=>setHistoryOpen(open=>!open)}><span>LỊCH SỬ & DỰ ÁN</span><b>{visibleProjects.length}</b><i>{historyOpen?"⌃":"⌄"}</i></button>
       {historyOpen&&<div className="project-library"><label className="project-search"><span>⌕</span><input value={projectSearch} onChange={event=>setProjectSearch(event.target.value)} placeholder="Tìm dự án hoặc nội dung đã làm…"/>{projectSearch&&<button type="button" onClick={()=>setProjectSearch("")}>×</button>}</label>{(["active","archive"] as const).map(group=><section className="project-group" key={group} onDragOver={event=>event.preventDefault()} onDrop={()=>{if(draggingProject)moveProjectToGroup(draggingProject,group);setDraggingProject("")}}><header><span>{group==="active"?"ĐANG LÀM":"ĐÃ LƯU TRỮ"}</span><b>{visibleProjects.filter(project=>(project.group||"active")===group).length}</b><small>Kéo dự án vào đây</small></header><nav>{visibleProjects.filter(project=>(project.group||"active")===group).map(project=><button draggable key={project.id} onDragStart={()=>setDraggingProject(project.id)} onDragEnd={()=>setDraggingProject("")} onClick={()=>selectProject(project.id)} className={`${project.id===activeProjectId?"project active":"project"}${draggingProject===project.id?" dragging":""}`}><span className="project-dot">{project.name[0]}</span><span><b>{project.name}</b><small>{project.folderName||`${project.entries.length} mục lịch sử`}</small></span>{project.id===activeProjectId&&<span className="live-dot"/>}</button>)}</nav></section>)}{!visibleProjects.length&&<div className="project-empty">Không tìm thấy dự án hoặc nội dung phù hợp.</div>}</div>}
-      <div className="sidebar-bottom"><button><span>?</span> Trợ giúp</button><div className="profile"><div>HT</div><span><b>Huy Tran</b><small>Local workspace</small></span></div></div>
+      <div className="sidebar-bottom"><button><span>?</span> {t("help")}</button><div className="profile"><div>HT</div><span><b>Huy Tran</b><small>Local workspace</small></span></div></div>
     </aside>
 
     <section className="workspace">
-      <header className="topbar"><div><span className="crumb">DỰ ÁN</span><h1>{activeProject?.name || "Dự án"} <span>{folderHandle ? folderHandle.name : "Chưa kết nối folder"}</span></h1></div><button className="search-trigger" onClick={() => {setSearchOpen(true); setTimeout(()=>searchRef.current?.focus(), 20)}}><Icon name="search"/><span>Tìm trong dự án...</span><kbd>Ctrl K</kbd></button></header>
+      <header className="topbar"><div><span className="crumb">{t("project")}</span><h1>{activeProject?.name || t("project")} <span>{folderHandle ? folderHandle.name : t("noFolder")}</span></h1></div><button className="search-trigger" onClick={() => {setSearchOpen(true); setTimeout(()=>searchRef.current?.focus(), 20)}}><Icon name="search"/><span>{t("searchProject")}</span><kbd>Ctrl K</kbd></button></header>
       <div className="timeline" id="timeline" ref={timelineRef}>
         {!entries.length&&<div className="empty-project"><b>Bạn muốn bắt đầu thế nào?</b><span>Chat để hỏi đáp bình thường, hoặc cho phép app tạo và sửa file trong một folder.</span><div className="empty-actions"><button onClick={()=>{setExecutionMode("analyze");if(!provider)setProvidersOpen(true);else setTimeout(()=>document.querySelector<HTMLTextAreaElement>('.composer textarea')?.focus(),20)}}><strong>Chat thường</strong><small>Hỏi đáp, phân tích và đính kèm tài liệu</small></button><button onClick={chooseFolder}><strong>Làm việc với dự án</strong><small>Chọn folder để tạo hoặc sửa file</small></button></div></div>}
         {entries.map((e, i) => <div key={e.id} id={e.id} className={`entry ${e.kind} ${e.role || ""} ${flash === e.id ? "flash" : ""}`}>
