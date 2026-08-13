@@ -18,6 +18,48 @@ type LegalAssessment = PolicyAssessment;
 type ProductEdition = "personal" | "community";
 const PRODUCT_EDITION: ProductEdition = import.meta.env.VITE_MINIMUM_EDITION === "community" ? "community" : "personal";
 
+const OFFICE_FILE = /\.(docx|xlsx|xls|pptx|odt|ods|odp|rtf)$/i;
+
+const xmlText = (xml: string) => {
+  const document = new DOMParser().parseFromString(xml, "application/xml");
+  return Array.from(document.querySelectorAll("p, h, t, table-row"))
+    .map(node => (node.textContent || "").trim())
+    .filter(Boolean)
+    .join("\n");
+};
+
+async function extractOfficeText(file: File) {
+  const extension = file.name.split(".").pop()?.toLowerCase();
+  const buffer = await file.arrayBuffer();
+  if (extension === "docx") {
+    const mammoth = await import("mammoth/mammoth.browser");
+    const result = await mammoth.extractRawText({ arrayBuffer: buffer });
+    return result.value;
+  }
+  if (extension === "xlsx" || extension === "xls") {
+    const XLSX = await import("xlsx");
+    const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
+    return workbook.SheetNames.map(name => `## Sheet: ${name}\n${XLSX.utils.sheet_to_csv(workbook.Sheets[name], { blankrows: false })}`).join("\n\n");
+  }
+  if (extension === "rtf") {
+    return new TextDecoder().decode(buffer)
+      .replace(/\\par[d]?/g, "\n")
+      .replace(/\\'[0-9a-fA-F]{2}/g, " ")
+      .replace(/\\[a-z]+-?\d* ?/g, "")
+      .replace(/[{}]/g, "")
+      .trim();
+  }
+  const { default: JSZip } = await import("jszip");
+  const zip = await JSZip.loadAsync(buffer);
+  if (extension === "pptx") {
+    const slides = Object.keys(zip.files).filter(name => /^ppt\/slides\/slide\d+\.xml$/i.test(name)).sort((a,b)=>a.localeCompare(b, undefined, { numeric:true }));
+    return (await Promise.all(slides.map(async (name,index)=>`## Slide ${index+1}\n${xmlText(await zip.file(name)!.async("text"))}`))).join("\n\n");
+  }
+  const content = zip.file("content.xml");
+  if (!content) throw new Error("Không tìm thấy nội dung trong tệp OpenDocument.");
+  return xmlText(await content.async("text"));
+}
+
 const folderStore = {
   open: () => new Promise<IDBDatabase>((resolve,reject)=>{ const request=indexedDB.open("minimum-workspace",1); request.onupgradeneeded=()=>request.result.createObjectStore("folders"); request.onsuccess=()=>resolve(request.result); request.onerror=()=>reject(request.error); }),
   get: async (projectId:string) => { const db=await folderStore.open(); return await new Promise<FileSystemDirectoryHandle|null>((resolve,reject)=>{ const request=db.transaction("folders").objectStore("folders").get(projectId); request.onsuccess=()=>resolve(request.result||null); request.onerror=()=>reject(request.error); }); },
@@ -451,14 +493,18 @@ export default function Home() {
     const binaryAllowed = /\.(pdf|png|jpe?g|webp|gif)$/i;
     const picked = Array.from(list).slice(0, 5);
     const maxFileBytes = 256 * 1024 * 1024;
-    const unsupported = picked.find(file => !textAllowed.test(file.name) && !binaryAllowed.test(file.name));
+    const unsupported = picked.find(file => !textAllowed.test(file.name) && !binaryAllowed.test(file.name) && !OFFICE_FILE.test(file.name));
     if (unsupported) { setUploadError(`Chưa hỗ trợ định dạng của ${unsupported.name}.`); return; }
     const oversized = picked.find(file => file.size > maxFileBytes);
     if (oversized) { setUploadError(`${oversized.name} vượt quá giới hạn 256 MB mỗi file.`); return; }
     const totalBytes = [...attachments, ...picked].reduce((sum, file) => sum + file.size, 0);
     if (totalBytes > maxFileBytes) { setUploadError("Tổng dung lượng file trong một yêu cầu không được vượt quá 256 MB. Hãy gửi thành nhiều lượt."); return; }
-    const loaded = await Promise.all(picked.map(async file => binaryAllowed.test(file.name) ? await new Promise<Attachment>((resolve,reject)=>{ const reader=new FileReader(); reader.onload=()=>resolve({name:file.name,size:file.size,dataUrl:String(reader.result),mime:file.type||"application/octet-stream"}); reader.onerror=()=>reject(reader.error); reader.readAsDataURL(file); }) : ({ name: file.name, size: file.size, text: await file.text(), mime:file.type||"text/plain" })));
-    setAttachments(prev => [...prev, ...loaded].slice(0, 5));
+    try {
+      const loaded = await Promise.all(picked.map(async file => binaryAllowed.test(file.name) ? await new Promise<Attachment>((resolve,reject)=>{ const reader=new FileReader(); reader.onload=()=>resolve({name:file.name,size:file.size,dataUrl:String(reader.result),mime:file.type||"application/octet-stream"}); reader.onerror=()=>reject(reader.error); reader.readAsDataURL(file); }) : OFFICE_FILE.test(file.name) ? ({ name:file.name, size:file.size, text:await extractOfficeText(file), mime:file.type||"application/octet-stream" }) : ({ name: file.name, size: file.size, text: await file.text(), mime:file.type||"text/plain" })));
+      setAttachments(prev => [...prev, ...loaded].slice(0, 5));
+    } catch (error) {
+      setUploadError(error instanceof Error ? `Không thể đọc tệp Office: ${error.message}` : "Không thể đọc tệp Office này.");
+    }
     if (fileRef.current) fileRef.current.value = "";
   };
 
@@ -519,7 +565,7 @@ export default function Home() {
         {draft.trim() && !projectIntent.active && <div className="usage-plan"><div className="usage-plan-head"><span>USAGE PROFILE</span><b>{usagePlan.profile}</b><em>Risk: {usagePlan.risk}</em></div><div className="usage-grid"><div><small>ƯU TIÊN</small><b>{usagePlan.priority}</b></div><div><small>CÔNG CỤ</small><b>{usagePlan.tool}</b></div><div><small>KIỂM CHỨNG</small><b>{usagePlan.verification}</b></div><div><small>OUTPUT</small><b>{usagePlan.output}</b></div></div><p>✓ Fact cần nguồn · ✓ Suy luận phải gắn nhãn · ✓ Tự chọn tool trước khi chọn model <span>Phân tích cục bộ · 0 token</span></p></div>}
         {clarification && (clarification.needed ? <div className="clarify-card"><div className="clarify-head"><span>?</span><div><b>Cần làm rõ trước khi thực hiện</b><small>{clarification.reason} · Rule cục bộ · 0 token</small></div><em>Auto</em></div><p>Bạn muốn tiếp tục phần nào?</p><div className="clarify-options"><button onClick={()=>setClarifiedScope("Sửa căn chỉnh ô gộp sát lề phải")}>Căn chỉnh ô gộp <small>Đề xuất</small></button><button onClick={()=>setClarifiedScope("Sửa đường viền của bảng")}>Đường viền bảng</button><button onClick={()=>setClarifiedScope("Kiểm tra cả căn chỉnh và đường viền")}>Cả hai</button></div><div className="kept-constraint">✓ Giữ nguyên ràng buộc: không sửa module OCR</div></div> : <div className="task-preview"><span>✓</span><p><b>Đã hiểu yêu cầu</b> {clarification.summary}</p><button onClick={()=>setClarifiedScope("")}>Chỉnh lại</button></div>)}
         {!provider ? <div className="connection-warning"><span>!</span><p><b>Chưa có model được kết nối</b> Hãy nhập API key để bắt đầu xử lý thật.</p><button onClick={()=>setProvidersOpen(true)}>Kết nối model</button></div> : <div className="connected-bar"><span>✓</span><p><b>{provider}</b> · {model}</p><button onClick={disconnectProvider}>Ngắt kết nối</button></div>}
-        <div className="execution-mode"><div><b>{executionMode === "execute" ? "Thực thi project có xác nhận" : "Chat & phân tích"}</b><span>{executionMode === "execute" ? `Có thể tạo hoặc sửa nhiều file trong ${folderHandle?.name || "folder đã chọn"}` : "Đọc file đính kèm và trả kết quả trong timeline"}</span></div><button disabled={!folderHandle} onClick={()=>setExecutionMode(mode=>mode === "analyze" ? "execute" : "analyze")}>{executionMode === "execute" ? "Chuyển sang Analyze" : folderHandle ? "Bật Execute" : "Kết nối folder để Execute"}</button></div>{pendingPatch&&<div className="patch-preview"><div><b>{pendingPatch.files.length} file chờ duyệt</b><span>{pendingPatch.summary}</span><small>{pendingPatch.files.map(file=>`${file.operation}: ${file.path}`).join(" · ")}</small></div><button onClick={()=>setPendingPatch(null)}>Hủy</button><button className="apply" onClick={applyPendingPatch}>Tạo/cập nhật file</button></div>}{attachments.length>0&&<div className="attachment-list">{attachments.map(file=><span key={file.name}>↗ {file.name} <small>{Math.ceil(file.size/1024)} KB</small><button onClick={()=>setAttachments(prev=>prev.filter(item=>item.name!==file.name))}>×</button></span>)}</div>}{uploadError&&<div className="upload-error">{uploadError}</div>}<div className="composer"><textarea aria-label="Nhập yêu cầu" value={draft} onChange={e=>{setDraft(e.target.value);setClarifiedScope("")}} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}}} placeholder={provider ? "Nêu mục tiêu hoặc đính kèm file để phân tích..." : "Kết nối model trước khi gửi yêu cầu..."}/><div className="composer-actions"><div><select aria-label="Chọn hãng hoặc model" value={provider || ""} disabled><option>{provider ? `${provider} · ${model}` : "Chưa có model"}</option></select><input ref={fileRef} className="file-input" type="file" multiple accept=".txt,.md,.csv,.json,.js,.jsx,.ts,.tsx,.py,.html,.css,.xml,.yaml,.yml,.sql,.log,.pdf,.png,.jpg,.jpeg,.webp,.gif,text/*,application/pdf,image/*" onChange={e=>attachFiles(e.target.files)}/><button onClick={()=>fileRef.current?.click()}>＋ Đính kèm file</button><button className="context-on"><i/> Context tự động</button></div><button className="send" aria-label="Gửi" onClick={sendMessage} disabled={!provider || (!draft.trim()&&!attachments.length) || sending || Boolean(clarification?.needed) || !interviewComplete || legalAssessment.level==="block" || (legalAssessment.level==="consent"&&!legalConsent)}><Icon name="send"/></button></div></div><p>Clarification: Auto · Tối đa 256 MB mỗi file và mỗi yêu cầu · Giới hạn thực tế còn phụ thuộc model/provider · Execute luôn cần duyệt</p>
+        <div className="execution-mode"><div><b>{executionMode === "execute" ? "Thực thi project có xác nhận" : "Chat & phân tích"}</b><span>{executionMode === "execute" ? `Có thể tạo hoặc sửa nhiều file trong ${folderHandle?.name || "folder đã chọn"}` : "Đọc file đính kèm và trả kết quả trong timeline"}</span></div><button disabled={!folderHandle} onClick={()=>setExecutionMode(mode=>mode === "analyze" ? "execute" : "analyze")}>{executionMode === "execute" ? "Chuyển sang Analyze" : folderHandle ? "Bật Execute" : "Kết nối folder để Execute"}</button></div>{pendingPatch&&<div className="patch-preview"><div><b>{pendingPatch.files.length} file chờ duyệt</b><span>{pendingPatch.summary}</span><small>{pendingPatch.files.map(file=>`${file.operation}: ${file.path}`).join(" · ")}</small></div><button onClick={()=>setPendingPatch(null)}>Hủy</button><button className="apply" onClick={applyPendingPatch}>Tạo/cập nhật file</button></div>}{attachments.length>0&&<div className="attachment-list">{attachments.map(file=><span key={file.name}>↗ {file.name} <small>{Math.ceil(file.size/1024)} KB</small><button onClick={()=>setAttachments(prev=>prev.filter(item=>item.name!==file.name))}>×</button></span>)}</div>}{uploadError&&<div className="upload-error">{uploadError}</div>}<div className="composer"><textarea aria-label="Nhập yêu cầu" value={draft} onChange={e=>{setDraft(e.target.value);setClarifiedScope("")}} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}}} placeholder={provider ? "Nêu mục tiêu hoặc đính kèm file để phân tích..." : "Kết nối model trước khi gửi yêu cầu..."}/><div className="composer-actions"><div><select aria-label="Chọn hãng hoặc model" value={provider || ""} disabled><option>{provider ? `${provider} · ${model}` : "Chưa có model"}</option></select><input ref={fileRef} className="file-input" type="file" multiple accept=".txt,.md,.csv,.json,.js,.jsx,.ts,.tsx,.py,.html,.css,.xml,.yaml,.yml,.sql,.log,.pdf,.png,.jpg,.jpeg,.webp,.gif,.docx,.xlsx,.xls,.pptx,.odt,.ods,.odp,.rtf,text/*,application/pdf,image/*" onChange={e=>attachFiles(e.target.files)}/><button onClick={()=>fileRef.current?.click()}>＋ Đính kèm file</button><button className="context-on"><i/> Context tự động</button></div><button className="send" aria-label="Gửi" onClick={sendMessage} disabled={!provider || (!draft.trim()&&!attachments.length) || sending || Boolean(clarification?.needed) || !interviewComplete || legalAssessment.level==="block" || (legalAssessment.level==="consent"&&!legalConsent)}><Icon name="send"/></button></div></div><p>Clarification: Auto · Word/Excel/PowerPoint/PDF/ảnh/OpenDocument · Tối đa 256 MB · Execute luôn cần duyệt</p>
       </div>
     </section>
 
