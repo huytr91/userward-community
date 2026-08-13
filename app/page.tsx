@@ -24,7 +24,7 @@ function parseInlineQuestions(text: string): InlineQuestion[] {
   for (const raw of lines) {
     const line = raw.replace(/\*\*/g, "").replace(/^#+\s*/, "");
     const question = line.match(/^(\d+)[.)]\s*(.+?)(?:\s*[—–-]\s*)?$/);
-    const option = line.match(/^[-–•]?\s*(?:[a-zA-Z][.)]|\[[ xX]?\]|☐|○)\s*(.+)$/);
+    const option = line.match(/^(?:(?:[-–•]\s*)(?:[a-zA-Z][.)]|\[[ xX]?\]|☐|○)\s*|[-–•]\s+)(.+)$/);
     if (question) {
       current = { id: `q${question[1]}`, ask: question[2].trim(), options: [], multi: /chọn nhiều|multiple|select all|có thể chọn nhiều/i.test(question[2]) };
       questions.push(current);
