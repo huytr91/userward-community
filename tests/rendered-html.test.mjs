@@ -10,12 +10,13 @@ async function render() {
   }, { waitUntil() {}, passThroughOnException() {} });
 }
 
-test("renders the Minimum community workspace", async () => {
+test("renders the Userward community workspace", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
-  assert.match(html, /<title>Minimum — AI Efficiency Workspace<\/title>/i);
+  assert.match(html, /<title>Userward — AI that answers to you<\/title>/i);
+  assert.match(html, /<span>Userward<\/span>/i);
   assert.match(html, />COMMUNITY</);
   assert.match(html, /New chat/);
   assert.match(html, /Connect model/);

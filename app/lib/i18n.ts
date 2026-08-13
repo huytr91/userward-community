@@ -16,7 +16,7 @@ const en = {
   chooseFolder: "Choose a folder", changeFolder: "Change folder", attach: "Attach file",
   autoContext: "Automatic context", send: "Send", prompt: "Describe your goal or attach files for analysis…",
   promptNoModel: "Connect a model before sending a request…", current: "Current", memory: "Memory",
-  usage: "Usage", language: "Language", processing: "Minimum is processing your request",
+  usage: "Usage", language: "Language", processing: "Userward is processing your request",
 };
 
 const dictionaries: Record<AppLocale, typeof en> = {

@@ -3,7 +3,7 @@ import { cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 const root = process.cwd();
-const destination = join(root, "release", "minimum-ai-workspace-community-v0.1.0");
+const destination = join(root, "release", "userward-community-v0.1.0");
 const excluded = new Set([
   "BUSINESS REQUIREMENTS DOCUMENT v2.md",
 ]);

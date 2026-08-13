@@ -1,6 +1,10 @@
-# Minimum AI Workspace — Community Edition
+# Userward — Community Edition
 
-Minimum is a local-first AI workspace for long-running chats and coding projects. It helps users describe outcomes in ordinary language, clarifies material ambiguity, routes requests to a connected model, keeps project history searchable, and shows measured token/cost usage.
+Userward is a user-aligned AI manager for long-running chats and coding projects. Users describe the outcome they want; Userward clarifies material ambiguity, chooses an appropriate method, protects approvals and privacy, keeps project history searchable, and reports measured token/cost usage.
+
+> **AI that answers to you.**
+
+Userward serves the user rather than a model provider. The underlying **Minimum Context Engine** selects only the context needed for the current goal, while the product layer governs tools, model usage, cost, permissions, and execution evidence.
 
 The interface detects the browser/operating-system language on first launch, remembers manual language changes, and currently provides core navigation in English, Vietnamese, Spanish, French, German, Japanese, Korean, and Chinese. Unsupported locales fall back to English.
 

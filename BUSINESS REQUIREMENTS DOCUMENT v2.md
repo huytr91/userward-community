@@ -2772,3 +2772,8 @@ Mỗi quyết định phải ghi `detected_locale`, `retrieved_policy_ids`, retr
 MVP hỗ trợ Vietnamese, English, Spanish, French, German, Japanese, Korean và Simplified Chinese; ngôn ngữ chưa hỗ trợ phải dùng English fallback và gắn nhãn độ tin cậy thấp. UI, câu hỏi làm rõ, consent, lý do block và audit export đều phải locale-aware.
 
 Acceptance tests bắt buộc có paraphrase, phủ định, trích dẫn/học thuật, typo, code-switching và adversarial prompt ở từng ngôn ngữ. `tạo tool làm video bằng Python` phải được hiểu là coding; `documentary explaining phishing detection` không được chặn như phishing attack; impersonation + financial fraud rõ ràng mới được auto-block. Policy và bản dịch phải được legal reviewer duyệt trước commercial release.
+# Product naming decision — Userward
+
+The product name is **Userward**, with the tagline **AI that answers to you**. The name expresses the product’s fiduciary direction: model, tool, privacy, budget, memory, and execution decisions must be made in the user’s interest rather than a provider’s interest.
+
+**Minimum Context Engine** remains the name of the context-selection subsystem. Existing browser storage identifiers beginning with `minimum-` are retained temporarily for backward compatibility and must be migrated without deleting user history or credentials.

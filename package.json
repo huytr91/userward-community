@@ -1,7 +1,7 @@
 {
-  "name": "minimum-ai-workspace-community",
+  "name": "userward-community",
   "version": "0.1.0",
-  "description": "Local-first AI workspace for chat, file analysis, and folder-scoped coding.",
+  "description": "A user-aligned AI manager for chat, file analysis, and folder-scoped coding.",
   "license": "Apache-2.0",
   "private": true,
   "engines": {

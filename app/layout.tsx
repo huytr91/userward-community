@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Minimum — AI Efficiency Workspace",
-  description: "Persistent project memory with minimum sufficient context.",
+  title: "Userward — AI that answers to you",
+  description: "A user-aligned AI manager for goals, tools, models, privacy, approvals, and real usage cost.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",

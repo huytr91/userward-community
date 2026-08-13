@@ -17,7 +17,7 @@ export async function POST(request: Request) {
         { type: "text", text: prompt.trim() },
         ...attachments.map(file => file.mime.startsWith("image/") ? { type: "image_url", image_url: { url: file.dataUrl } } : { type: "file", file: { filename: file.name, file_data: file.dataUrl } }),
       ] : prompt.trim();
-      response = await fetch(`${compatibleBases[provider]}/chat/completions`, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", ...(provider === "OpenRouter" ? { "HTTP-Referer": "https://minimum-ai-workspace.huy-hanoietrip.chatgpt.site", "X-OpenRouter-Title": "Minimum AI Workspace" } : {}) }, body: JSON.stringify({ model, messages: [{ role: "user", content }], max_tokens: outputLimit, ...(provider === "OpenRouter" && model !== "openrouter/free" ? { reasoning: { effort: "low", exclude: true }, ...(executionMode === "execute" ? { response_format: { type: "json_object" } } : {}) } : {}) }) });
+      response = await fetch(`${compatibleBases[provider]}/chat/completions`, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", ...(provider === "OpenRouter" ? { "HTTP-Referer": "https://minimum-ai-workspace.huy-hanoietrip.chatgpt.site", "X-OpenRouter-Title": "Userward" } : {}) }, body: JSON.stringify({ model, messages: [{ role: "user", content }], max_tokens: outputLimit, ...(provider === "OpenRouter" && model !== "openrouter/free" ? { reasoning: { effort: "low", exclude: true }, ...(executionMode === "execute" ? { response_format: { type: "json_object" } } : {}) } : {}) }) });
     }
 
     const data = await response.json() as Record<string, any>;
