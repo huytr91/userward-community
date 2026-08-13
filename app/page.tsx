@@ -7,7 +7,7 @@ type Kind = "message" | "task" | "decision" | "result" | "file";
 type TokenUsage = { promptTokens: number; completionTokens: number; totalTokens: number; cost?: number };
 type Entry = { id: string; kind: Kind; title?: string; text: string; time: string; meta?: string; role?: "user" | "ai"; usage?: TokenUsage };
 type Attachment = { name: string; size: number; text?: string; dataUrl?: string; mime?: string };
-type LocalProject = { id: string; name: string; kind?: "chat" | "project"; folderName?: string; entries: Entry[] };
+type LocalProject = { id: string; name: string; kind?: "chat" | "project"; folderName?: string; group?: "active" | "archive"; entries: Entry[] };
 type WorkspaceFile = { path: string; handle: FileSystemFileHandle };
 type PatchFile = { path: string; content: string; operation: "create" | "update" };
 type PendingPatch = { files: PatchFile[]; summary: string };
@@ -176,6 +176,9 @@ export default function Home() {
   const [activeProjectId, setActiveProjectId] = useState("pdf");
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(true);
+  const [projectSearch, setProjectSearch] = useState("");
+  const [draggingProject, setDraggingProject] = useState("");
   const [folderHandle, setFolderHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFile[]>([]);
   const [selectedWorkspaceFile, setSelectedWorkspaceFile] = useState("");
@@ -222,6 +225,8 @@ export default function Home() {
     const q = query.toLowerCase().trim();
     return entries.filter(e => (filter === "all" || e.kind === filter) && (!q || `${e.title || ""} ${e.text} ${e.meta || ""}`.toLowerCase().includes(q)));
   }, [query, filter]);
+  const visibleProjects = useMemo(()=>{ const q=projectSearch.toLowerCase().trim(); return projectList.filter(project=>!q||`${project.name} ${project.folderName||""} ${project.entries.map(entry=>`${entry.title||""} ${entry.text}`).join(" ")}`.toLowerCase().includes(q)); },[projectList,projectSearch]);
+  const moveProjectToGroup = (id:string,group:"active"|"archive") => setProjectList(prev=>prev.map(project=>project.id===id?{...project,group}:project));
 
   const clarification = useMemo(() => {
     const q = draft.trim().toLowerCase();
@@ -483,8 +488,8 @@ export default function Home() {
       <button className="new-project" onClick={createChat}><Icon name="plus"/> Chat mới</button>
       <button className="new-project-link" onClick={()=>setNewProjectOpen(true)}>＋ Tạo dự án có folder</button>
       <button className="provider-button" onClick={()=>setProvidersOpen(true)}>⌘ <span>{provider || "Kết nối model"}</span><b>{provider ? "✓" : "0"}</b></button>
-      <p className="section-label">LỊCH SỬ</p>
-      <nav>{projectList.map(project => <button key={project.id} onClick={()=>selectProject(project.id)} className={project.id === activeProjectId ? "project active" : "project"}><span className="project-dot">{project.name[0]}</span><span>{project.name}</span>{project.id === activeProjectId && <span className="live-dot"/>}</button>)}</nav>
+      <button className="history-toggle" type="button" onClick={()=>setHistoryOpen(open=>!open)}><span>LỊCH SỬ & DỰ ÁN</span><b>{visibleProjects.length}</b><i>{historyOpen?"⌃":"⌄"}</i></button>
+      {historyOpen&&<div className="project-library"><label className="project-search"><span>⌕</span><input value={projectSearch} onChange={event=>setProjectSearch(event.target.value)} placeholder="Tìm dự án hoặc nội dung đã làm…"/>{projectSearch&&<button type="button" onClick={()=>setProjectSearch("")}>×</button>}</label>{(["active","archive"] as const).map(group=><section className="project-group" key={group} onDragOver={event=>event.preventDefault()} onDrop={()=>{if(draggingProject)moveProjectToGroup(draggingProject,group);setDraggingProject("")}}><header><span>{group==="active"?"ĐANG LÀM":"ĐÃ LƯU TRỮ"}</span><b>{visibleProjects.filter(project=>(project.group||"active")===group).length}</b><small>Kéo dự án vào đây</small></header><nav>{visibleProjects.filter(project=>(project.group||"active")===group).map(project=><button draggable key={project.id} onDragStart={()=>setDraggingProject(project.id)} onDragEnd={()=>setDraggingProject("")} onClick={()=>selectProject(project.id)} className={`${project.id===activeProjectId?"project active":"project"}${draggingProject===project.id?" dragging":""}`}><span className="project-dot">{project.name[0]}</span><span><b>{project.name}</b><small>{project.folderName||`${project.entries.length} mục lịch sử`}</small></span>{project.id===activeProjectId&&<span className="live-dot"/>}</button>)}</nav></section>)}{!visibleProjects.length&&<div className="project-empty">Không tìm thấy dự án hoặc nội dung phù hợp.</div>}</div>}
       <div className="sidebar-bottom"><button><span>?</span> Trợ giúp</button><div className="profile"><div>HT</div><span><b>Huy Tran</b><small>Local workspace</small></span></div></div>
     </aside>
 
