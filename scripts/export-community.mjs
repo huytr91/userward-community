@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 const root = process.cwd();
@@ -19,5 +19,4 @@ for (const file of files) {
   cpSync(join(root, file), target);
 }
 
-writeFileSync(join(destination, ".openai", "hosting.json"), JSON.stringify({ project_id: null, d1: null, r2: null }, null, 2) + "\n");
 console.log(`Community source exported to ${destination}`);

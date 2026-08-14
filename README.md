@@ -1,4 +1,4 @@
-# Userward — Community Edition
+# Userward Local — Community Edition
 
 Userward is a user-aligned AI manager for long-running chats and coding projects. Users describe the outcome they want; Userward clarifies material ambiguity, chooses an appropriate method, protects approvals and privacy, keeps project history searchable, and reports measured token/cost usage.
 
@@ -10,7 +10,17 @@ Its binding differentiator is the **User Interest Constitution**: tool before mo
 
 The interface detects the browser/operating-system language on first launch, remembers manual language changes, and currently provides core navigation in English, Vietnamese, Spanish, French, German, Japanese, Korean, and Chinese. Unsupported locales fall back to English.
 
-This public Community Edition contains **chat, file analysis, and folder-scoped coding**. Media generation, email/calendar actions, deployment, RPA, Power BI/Desktop control, and other private connectors are not included.
+This local Community Edition contains **chat, file analysis, and folder-scoped coding**. It has no Userward cloud account, database, analytics, or telemetry. Media generation, email/calendar actions, deployment, RPA, Power BI/Desktop control, and other private connectors are not included.
+
+## Start on Windows
+
+Double-click `START-USERWARD.cmd`. On the first run it prepares dependencies and builds the app, then opens:
+
+```text
+http://127.0.0.1:3000
+```
+
+Closing the launcher window stops Userward. The server binds to loopback only and is not exposed to the LAN or Internet.
 
 ## Current status
 
@@ -32,8 +42,9 @@ Known limitations:
 - A selected folder is not a connection to an application with the same name.
 - PDF/image requests sent directly through OpenRouter can require funded credits.
 - The 256 MB picker limit is not a guarantee that a model/provider or hosting layer accepts a request of that size.
-- Provider keys pass through the app server proxy for the duration of a request. Review your hosting environment before use.
-- Browser `localStorage` is used for project history. It is not encrypted storage.
+- Provider keys pass only through the local app server for the request. The key is session-only and is not persisted by Userward.
+- Browser `localStorage` is used for device-local project history. It is not encrypted storage; use **Delete all local data** before handing the device to someone else.
+- Cloud-model requests still send the minimum selected context to that provider. Local-first is not the same as offline.
 
 ## Requirements
 

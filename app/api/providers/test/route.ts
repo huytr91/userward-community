@@ -11,6 +11,8 @@ const json = (body: unknown, status = 200) => Response.json(body, { status });
 
 export async function POST(request: Request) {
   try {
+    const hostname = new URL(request.url).hostname;
+    if (!["127.0.0.1", "localhost", "::1"].includes(hostname)) return Response.json({ error: "Userward Local chỉ nhận yêu cầu từ thiết bị này." }, { status: 403 });
     const { provider, apiKey } = await request.json() as { provider?: Provider; apiKey?: string };
     if (!provider || !apiKey?.trim()) return json({ error: "Thiếu provider hoặc API key." }, 400);
 

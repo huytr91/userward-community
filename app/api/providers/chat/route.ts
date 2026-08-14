@@ -4,6 +4,8 @@ const json = (body: unknown, status = 200) => Response.json(body, { status });
 
 export async function POST(request: Request) {
   try {
+    const hostname = new URL(request.url).hostname;
+    if (!["127.0.0.1", "localhost", "::1"].includes(hostname)) return json({ error: "Userward Local chỉ nhận yêu cầu từ thiết bị này." }, 403);
     const { provider, apiKey, model, prompt, attachments = [], maxOutputTokens = 1800, executionMode = "analyze" } = await request.json() as { provider?: Provider; apiKey?: string; model?: string; prompt?: string; executionMode?: "analyze" | "execute"; maxOutputTokens?: number; attachments?: Array<{ name: string; dataUrl: string; mime: string }> };
     const outputLimit = Math.min(Math.max(Number(maxOutputTokens) || 1800, 200), 8000);
     if (!provider || !apiKey || !model || !prompt?.trim()) return json({ error: "Thiếu thông tin để gửi yêu cầu." }, 400);
@@ -17,7 +19,7 @@ export async function POST(request: Request) {
         { type: "text", text: prompt.trim() },
         ...attachments.map(file => file.mime.startsWith("image/") ? { type: "image_url", image_url: { url: file.dataUrl } } : { type: "file", file: { filename: file.name, file_data: file.dataUrl } }),
       ] : prompt.trim();
-      response = await fetch(`${compatibleBases[provider]}/chat/completions`, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", ...(provider === "OpenRouter" ? { "HTTP-Referer": "https://minimum-ai-workspace.huy-hanoietrip.chatgpt.site", "X-OpenRouter-Title": "Userward" } : {}) }, body: JSON.stringify({ model, messages: [{ role: "user", content }], max_tokens: outputLimit, ...(provider === "OpenRouter" && model !== "openrouter/free" ? { reasoning: { effort: "low", exclude: true }, ...(executionMode === "execute" ? { response_format: { type: "json_object" } } : {}) } : {}) }) });
+      response = await fetch(`${compatibleBases[provider]}/chat/completions`, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", ...(provider === "OpenRouter" ? { "HTTP-Referer": "http://127.0.0.1:3000", "X-OpenRouter-Title": "Userward Local" } : {}) }, body: JSON.stringify({ model, messages: [{ role: "user", content }], max_tokens: outputLimit, ...(provider === "OpenRouter" && model !== "openrouter/free" ? { reasoning: { effort: "low", exclude: true }, ...(executionMode === "execute" ? { response_format: { type: "json_object" } } : {}) } : {}) }) });
     }
 
     const data = await response.json() as Record<string, any>;

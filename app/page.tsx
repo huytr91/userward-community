@@ -323,7 +323,7 @@ export default function Home() {
   useEffect(() => {
     const savedProjects = localStorage.getItem("minimum-projects");
     if (savedProjects) { try { const demoIds = new Set(["m1","d1","t1","m2","d2","t2","f1","r1","m3","t3","m4"]); const parsed = (JSON.parse(savedProjects) as LocalProject[]).map(project => { const realEntries = project.entries.filter(entry => !demoIds.has(entry.id)); return { ...project, entries: realEntries.some(entry => entry.id === "security-policy") ? realEntries : [...realEntries, initialEntries.find(entry => entry.id === "security-policy")!] }; }); setProjectList(parsed); setActiveProjectId(parsed[0]?.id || "pdf"); setEntries(parsed[0]?.entries || []); } catch {} }
-    const credentialStorage = PRODUCT_EDITION === "personal" ? localStorage : sessionStorage;
+    const credentialStorage = sessionStorage;
     const savedConnection = credentialStorage.getItem("minimum-provider-connection");
     if (savedConnection) { try { const saved = JSON.parse(savedConnection) as { provider?: string; model?: string; apiKey?: string }; if (saved.provider && saved.model && saved.apiKey) { setProvider(saved.provider); setCredentialProvider(saved.provider); setModel(saved.model); setApiKey(saved.apiKey); setRememberKey(true); } } catch { credentialStorage.removeItem("minimum-provider-connection"); } }
     const onKey = (e: KeyboardEvent) => {
@@ -545,7 +545,7 @@ export default function Home() {
   const saveProvider = () => {
     if (!credentialProvider || !apiKey.trim() || !model) return;
     setProvider(credentialProvider);
-    const credentialStorage = PRODUCT_EDITION === "personal" ? localStorage : sessionStorage;
+    const credentialStorage = sessionStorage;
     if (rememberKey) credentialStorage.setItem("minimum-provider-connection", JSON.stringify({ provider: credentialProvider, model, apiKey }));
     else credentialStorage.removeItem("minimum-provider-connection");
     setProvidersOpen(false); setCredentialProvider(""); setAvailableModels([]);
@@ -556,9 +556,17 @@ export default function Home() {
     localStorage.removeItem("minimum-provider-connection"); sessionStorage.removeItem("minimum-provider-connection");
   };
 
+  const clearLocalData = async () => {
+    if (!window.confirm("Xóa toàn bộ lịch sử, dự án, cấu hình model và quyền folder đã lưu trên thiết bị này?")) return;
+    ["minimum-ui-locale", "minimum-projects", "minimum-provider-connection"].forEach(key=>localStorage.removeItem(key));
+    sessionStorage.removeItem("minimum-provider-connection");
+    await new Promise<void>((resolve) => { const request=indexedDB.deleteDatabase("minimum-workspace"); request.onsuccess=request.onerror=request.onblocked=()=>resolve(); });
+    window.location.reload();
+  };
+
   return <main className="shell">
     <aside className="projects">
-      <div className="brand"><div className="brandmark">U</div><span>Userward</span><em>{PRODUCT_EDITION==="personal"?"PERSONAL":"COMMUNITY"}</em></div>
+      <div className="brand"><div className="brandmark">U</div><span>Userward</span><em>LOCAL · {PRODUCT_EDITION==="personal"?"PERSONAL":"COMMUNITY"}</em></div>
       <label className="language-picker"><span>{t("language")}</span><select value={locale} onChange={event=>changeLocale(event.target.value as AppLocale)} aria-label={t("language")}>{supportedLocales.map(item=><option key={item} value={item}>{localeNames[item]}</option>)}</select></label>
       <button className="new-project" onClick={createChat}><Icon name="plus"/> {t("newChat")}</button>
       <button className="new-project-link" onClick={()=>setNewProjectOpen(true)}>＋ {t("newProject")}</button>
@@ -594,7 +602,8 @@ export default function Home() {
       </div>
     </section>
 
-    <aside className="brain"><div className="brain-title"><Icon name="brain"/><div><span>BỘ NHỚ DỰ ÁN</span><b>Đang đồng bộ</b></div><i/></div><div className="brain-tabs"><button className="active">Hiện tại</button><button>Bộ nhớ</button><button>Sử dụng</button></div>
+    <aside className="brain"><div className="brain-title"><Icon name="brain"/><div><span>USERWARD LOCAL</span><b>Chỉ chạy trên thiết bị</b></div><i/></div><div className="brain-tabs"><button className="active">Hiện tại</button><button>Bộ nhớ local</button><button>Sử dụng</button></div>
+      <section><label>LOCAL PRIVACY</label><div className="security-status local-privacy"><b>✓ Không có cloud Userward</b><span>App chỉ nghe tại 127.0.0.1</span><span>Lịch sử chỉ lưu trong trình duyệt thiết bị này</span><span>API key chỉ giữ trong phiên đang mở</span><span>Dữ liệu chỉ rời máy khi bạn gọi provider</span><button type="button" className="clear-local-data" onClick={clearLocalData}>Xóa toàn bộ dữ liệu local</button></div></section>
       <section><label>USER INTEREST</label><div className="security-status user-interest"><b>✓ Userward đứng về phía bạn</b><span>Tool trước, model sau</span><span>Không tự nâng free → paid</span><span>Không side effect thiếu phê duyệt</span><span>Không báo hoàn tất thiếu bằng chứng</span></div></section>
       <section><label>SECURITY GATE</label><div className="security-status"><b>✓ Local-first protection</b><span>API key chỉ ở bộ nhớ tab</span><span>Secret tự động được che trước khi gửi</span><span>File chỉ ghi sau khi bạn xác nhận</span>{lastRedactions>0&&<em>Đã che {lastRedactions} secret trong request gần nhất</em>}</div></section><section><label>WORKSPACE FOLDER</label><button className="folder-connect" onClick={chooseFolder}>{folderHandle ? `✓ ${folderHandle.name}` : "＋ Chọn folder trên máy"}</button>{workspaceError&&<p className="workspace-error">{workspaceError}</p>}<div className="workspace-files">{workspaceFiles.slice(0,40).map(file=><button key={file.path} className={selectedWorkspaceFile===file.path?"active":""} onClick={()=>openWorkspaceFile(file)}>↗ {file.path}</button>)}{folderHandle&&!workspaceFiles.length&&<small>Không tìm thấy file text/code được hỗ trợ.</small>}</div></section><section><label>CẤU HÌNH SỬ DỤNG AI</label><div className="state-card"><span className="pulse"/><div><b>{draft.trim() ? usagePlan.profile : "Auto profile"}</b><small>{draft.trim() ? usagePlan.tool : "Nêu mục tiêu, hệ thống tự cấu hình"}</small></div></div></section>
       <section><div className="section-row"><label>RÀNG BUỘC ĐANG ÁP DỤNG</label><span>0</span></div><div className="memory-item"><i>·</i><p>Chưa có ràng buộc nào. Chỉ hiển thị quyết định do bạn xác nhận hoặc ghim.</p></div></section>

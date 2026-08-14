@@ -2847,3 +2847,15 @@ features: chat, projects, memory, usage, approvals, settings
 The first implemented slice is `app/lib/userward-core.ts`: constitution, Goal Contract, honest Community registry, tool-first routing, Context Pack, and Execution Receipt. Later releases replace static facts with signed provider metadata, reliability telemetry, and benchmark results.
 
 North-star metric: **goals completed within user-confirmed quality, cost, privacy, and permission boundaries**. Supporting metrics include first-pass success, clarification burden, override rate, cost per completed outcome, measured tokens avoided, unsupported-action honesty, false safety intervention, memory citation accuracy, routing regret, and unapproved side effects (target: zero).
+
+# 104. LOCAL-ONLY DISTRIBUTION DECISION
+
+Userward SHALL be distributed as a local application. The primary address is `http://127.0.0.1:3000`; no Userward-operated public web application, account database, analytics service, or project-content telemetry is part of the product.
+
+- The local server SHALL bind only to loopback, never `0.0.0.0` or the LAN.
+- Provider proxy routes SHALL reject requests whose host is not loopback.
+- Project/history/preferences may persist only on the user's device and SHALL be removable with one action.
+- API keys are session-only until an OS-keychain Local Companion is implemented.
+- Provider calls remain outbound transfers and SHALL be disclosed; “local-first” SHALL NOT be presented as “offline” when a cloud model is selected.
+- Public hosting configuration SHALL NOT ship in the local release.
+- A one-click Windows launcher SHALL prepare, build, start Userward, and open the loopback URL. Closing its window stops the local server.

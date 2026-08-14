@@ -8,17 +8,19 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "vinext dev",
+    "dev": "vinext dev --host 127.0.0.1 --port 3000",
     "build": "vinext build",
-    "start": "vinext start",
+    "start": "vinext start --host 127.0.0.1 --port 3000",
+    "start:local": "vinext start --host 127.0.0.1 --port 3000",
     "build:community": "node scripts/build-community.mjs",
-    "test": "npm run build:community && node --test tests/rendered-html.test.mjs && npm run test:policy && npm run test:i18n && npm run test:userward-core",
+    "test": "npm run build:community && node --test tests/rendered-html.test.mjs && npm run test:policy && npm run test:i18n && npm run test:userward-core && npm run test:local-only",
     "test:i18n": "node --experimental-strip-types --test tests/i18n.test.ts",
     "check:public": "node scripts/check-public.mjs",
     "release:check": "npm run check:public && npm test",
     "export:community": "node scripts/export-community.mjs",
     "test:policy": "node --experimental-strip-types --test tests/policy-rag.test.ts",
     "test:userward-core": "node --experimental-strip-types --test tests/userward-core.test.ts",
+    "test:local-only": "node --experimental-strip-types --test tests/local-only.test.ts",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },
