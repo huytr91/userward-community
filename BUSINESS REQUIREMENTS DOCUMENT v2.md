@@ -210,6 +210,27 @@ The interview must:
 - enable execution only after required answers are complete;
 - avoid charging model tokens when local rules can identify the missing fields.
 
+### 0.8.1 Conservative Interview Generation Pipeline
+
+The Clarification Interview is a **local-first decision gate**, not an invisible model call. The product must prioritize avoiding a wrong project outcome over appearing conversationally clever.
+
+```text
+Required-field rules
+  → Local question dictionary
+  → Local retrieval from user-selected brief / attachment / workspace evidence
+  → Explicit user consent to ask the connected model for interview questions
+```
+
+1. **Required-field rules** always run locally. They cover execution permission, overwrite policy, data source, destination, schedule, platform and audience when those fields materially change the result.
+2. **Question dictionary** is the default for known workflows. It must return compact, selectable questions and must not ask the user to choose technical implementation details that Userward can decide safely.
+3. **Local retrieval** may enrich a question with evidence from user-selected content. It must retain source path/name and must not send embeddings, chunks or file content to a provider.
+4. **Model-generated questions are opt-in.** If the local pipeline has low confidence or no suitable question, the UI must explain that the goal is still ambiguous and offer an explicit permission action. The disclosure must name the connected provider/model, the minimum data proposed for transmission, and that usage may incur provider cost.
+5. The default alternative to model assistance is one concise open question. The system must never silently call a provider merely to generate clarification questions.
+6. Model output, after consent, is untrusted input. Validate a strict question schema; keep at most four questions; exclude technical architecture, framework, API, database, folder-structure and test-tool choices; and label provenance as `model`.
+7. Every question must carry provenance: `rule`, `dictionary`, `local-retrieval`, or `model`. Store the answer and provenance in TaskSpec/audit history without retaining secret values.
+
+Success measures: percentage of interviews resolved locally, provider calls authorized for interviews, repeated-question rate, user corrections after execution, and token/cost per successfully clarified task.
+
 Example for an email automation goal:
 
 | Required field | Question |
@@ -2832,6 +2853,8 @@ Memory items contain type, value, source, confidence, status (`proposed`, `confi
 
 Safety is silent for allowed requests. Retrieval informs semantic assessment but never independently blocks. User-facing output hides policy IDs and scores; ambiguous cases ask plain-language rights/purpose questions. Technical audit remains available to authorized diagnostics.
 
+Community Edition (public) SHALL implement this as a quiet engine, not a legal console: ALLOW is invisible; CONSENT is a one-line notice that sending uses the connected model; REVIEW is at most one everyday-language purpose question; BLOCK refuses with zero generation tokens in ordinary language. Policy IDs, confidence scores, and “Policy RAG” labels MUST NOT appear in the end-user surface. A consent ledger and human-review queue remain Personal Edition.
+
 Revenue comes from explicit software, governance, Local Companion, team policy, or connector fees—not hidden token markup or provider-biased routing. User data and credentials remain exportable.
 
 # 103. TARGET ARCHITECTURE AND DELIVERY
@@ -2850,12 +2873,18 @@ North-star metric: **goals completed within user-confirmed quality, cost, privac
 
 # 104. LOCAL-ONLY DISTRIBUTION DECISION
 
-Userward SHALL be distributed as a local application. The primary address is `http://127.0.0.1:3000`; no Userward-operated public web application, account database, analytics service, or project-content telemetry is part of the product.
+Userward SHALL be distributed as a local application. The primary address is `http://127.0.0.1:3001`; no Userward-operated public web application, account database, analytics service, or project-content telemetry is part of the product.
 
 - The local server SHALL bind only to loopback, never `0.0.0.0` or the LAN.
 - Provider proxy routes SHALL reject requests whose host is not loopback.
 - Project/history/preferences may persist only on the user's device and SHALL be removable with one action.
-- API keys are session-only until an OS-keychain Local Companion is implemented.
+- API keys default to the current tab. The user MAY opt in to remember the connection in on-device browser storage until an OS-keychain Local Companion is implemented. Keys MUST NOT be stored in project history.
 - Provider calls remain outbound transfers and SHALL be disclosed; “local-first” SHALL NOT be presented as “offline” when a cloud model is selected.
 - Public hosting configuration SHALL NOT ship in the local release.
 - A one-click Windows launcher SHALL prepare, build, start Userward, and open the loopback URL. Closing its window stops the local server.
+
+# 105. LOCAL MODEL CONNECTION
+
+Userward SHALL provide a working Ollama adapter rather than displaying unavailable local gateways. The adapter SHALL discover installed models through `http://127.0.0.1:11434/api/tags`, send chat requests through the local Ollama API, require no API key, prefer an installed Qwen model when available, and report provider cost as zero.
+
+The connection screen SHALL link directly to the official Ollama download and model library, show copyable commands for a recommended Qwen model and a lower-memory alternative, and explain that Ollama must remain running. Unimplemented gateways such as 9Router SHALL NOT appear as selectable providers. Local execution SHALL be described accurately: model inference remains on the device, while any separately selected cloud provider still receives the disclosed request context.

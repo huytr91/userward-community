@@ -13,7 +13,8 @@ Do not open a public issue containing exploit details, credentials, personal dat
 - Use HTTPS only.
 - Do not log request bodies or authorization headers on the proxy routes.
 - Add rate limiting, request-size enforcement, abuse controls, and authentication before a public multi-user deployment.
-- Treat browser storage as unencrypted and user-controlled.
+- Treat browser storage as unencrypted and user-controlled. Remembered API keys live in `localStorage` only when the user opts in.
+- The included policy engine is defense in depth, not a complete legal or content-safety system. User-facing copy must not expose policy IDs or scores.
 - Provider keys are supplied by users and forwarded to providers by server routes. They must not be persisted by the server.
 - File System Access handles remain browser-scoped but can grant write access after user permission. Preserve the patch approval gate.
 - Large files can exhaust browser memory because Office extraction and binary encoding occur client-side.

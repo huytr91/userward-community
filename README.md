@@ -1,26 +1,27 @@
 # Userward Local — Community Edition
 
-Userward is a user-aligned AI manager for long-running chats and coding projects. Users describe the outcome they want; Userward clarifies material ambiguity, chooses an appropriate method, protects approvals and privacy, keeps project history searchable, and reports measured token/cost usage.
+AI software should stand with the person who pays for tokens and lives with the answers — not with the model vendor.
 
-> **AI that answers to you.**
+> **AI that answers to you.**  
+> *Context, because tokens are yours.*
 
-Userward serves the user rather than a model provider. The underlying **Minimum Context Engine** selects only the context needed for the current goal, while the product layer governs tools, model usage, cost, permissions, and execution evidence.
+You run Userward on your own machine. There is no Userward cloud account. You describe the work; the app asks only the facts that change the outcome (where to save, when to run), packs the smallest honest context, then calls a model. It does not silently upgrade a free route to a paid one. It does not write files until you approve. Token and cost figures are measured when the provider sends them, or estimated from the text when it does not.
 
-Its binding differentiator is the **User Interest Constitution**: tool before model, least-expensive-qualified routing, minimum necessary context, no silent paid upgrade, no unapproved side effect, and no completion claim without evidence. Real responses can include an inspectable Execution Receipt.
+The **Minimum Context Engine** and **User Interest Constitution** encode that stance: tool before model, least-expensive qualified routing, minimum necessary context, no unapproved side effect, and no completion claim without evidence. Replies can include an inspectable execution receipt.
 
 The interface detects the browser/operating-system language on first launch, remembers manual language changes, and currently provides core navigation in English, Vietnamese, Spanish, French, German, Japanese, Korean, and Chinese. Unsupported locales fall back to English.
 
-This local Community Edition contains **chat, file analysis, and folder-scoped coding**. It has no Userward cloud account, database, analytics, or telemetry. Media generation, email/calendar actions, deployment, RPA, Power BI/Desktop control, and other private connectors are not included.
+This local Community Edition contains **chat, file analysis, and folder-scoped coding**. It has no Userward cloud account, database, analytics, or telemetry. Desktop automation (Power Automate, Outlook UI), terminal runtimes, media generation, email, deploy, and other private connectors are **not** in this public repository.
 
 ## Start on Windows
 
 Double-click `START-USERWARD.cmd`. On the first run it prepares dependencies and builds the app, then opens:
 
 ```text
-http://127.0.0.1:3000
+http://127.0.0.1:3001
 ```
 
-Closing the launcher window stops Userward. The server binds to loopback only and is not exposed to the LAN or Internet.
+Port **3000** is reserved for **AI agent RPA tools**. Closing the launcher window stops Userward. The server binds to loopback only and is not exposed to the LAN or Internet.
 
 ## Current status
 
@@ -28,7 +29,7 @@ Early preview. Do not treat the app as a security boundary or use it for product
 
 Working capabilities:
 
-- Bring your own API key for OpenRouter, OpenAI, Anthropic, Google, DeepSeek, Qwen, or Kimi.
+- Bring your own API key for OpenRouter, OpenAI, Anthropic, Google, DeepSeek, Qwen, or Kimi; or connect to local models through Ollama without an API key.
 - Searchable project/chat history stored in the browser.
 - Optional browser-granted folder access for previewing file patches.
 - User approval before writing a proposed patch.
@@ -41,8 +42,8 @@ Known limitations:
 - There is no Power BI, Office desktop, RPA, terminal, deployment, email, or calendar connector in this repository.
 - A selected folder is not a connection to an application with the same name.
 - PDF/image requests sent directly through OpenRouter can require funded credits.
-- The 256 MB picker limit is not a guarantee that a model/provider or hosting layer accepts a request of that size.
-- Provider keys pass only through the local app server for the request. The key is session-only and is not persisted by Userward.
+- The 10 MB per-file picker limit is not a guarantee that a model/provider accepts a request of that size.
+- Provider keys pass only through the local app server for the request. They are not stored in project history. If you tick **Remember this connection**, the key stays in this browser’s local storage on the device; otherwise it lasts only for the tab.
 - Browser `localStorage` is used for device-local project history. It is not encrypted storage; use **Delete all local data** before handing the device to someone else.
 - Cloud-model requests still send the minimum selected context to that provider. Local-first is not the same as offline.
 
@@ -50,7 +51,7 @@ Known limitations:
 
 - Node.js 22.13 or newer
 - npm
-- A supported provider API key
+- A supported provider API key, or Ollama with at least one local model installed
 - Chrome or Edge desktop for File System Access folder features
 
 ## Run locally
@@ -61,6 +62,15 @@ npm run dev
 ```
 
 Open the URL printed by the development server.
+
+## Use Qwen locally with Ollama
+
+1. Install Ollama from [ollama.com/download](https://ollama.com/download).
+2. Open Terminal or PowerShell and run `ollama run qwen3:8b`. On a lower-memory computer, use `ollama run qwen3:4b`.
+3. Keep Ollama running. In Userward, open **Connect model**, choose **Ollama · Local models**, and select **Find models on this computer**.
+4. Select an installed Qwen model and save the connection.
+
+Userward connects only to `http://127.0.0.1:11434`. Local prompts do not require an API key and provider cost is recorded as zero. Model downloads, speed, context limits, and output quality depend on the selected model and the computer's available RAM/VRAM.
 
 ## Community release checks
 

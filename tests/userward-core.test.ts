@@ -1,10 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { compileContextPack, createExecutionReceipt, createGoalContract, routeForUser, USER_INTEREST_CONSTITUTION } from "../app/lib/userward-core.ts";
+import { compileContextPack, COMMUNITY_CAPABILITY_REGISTRY, createExecutionReceipt, createGoalContract, routeForUser, USER_INTEREST_CONSTITUTION } from "../app/lib/userward-core.ts";
 
 test("constitution encodes user-aligned routing and approval", () => {
   assert.ok(USER_INTEREST_CONSTITUTION.some(rule => rule.includes("least expensive qualified")));
   assert.ok(USER_INTEREST_CONSTITUTION.some(rule => rule.includes("without explicit")));
+});
+
+test("community registry exposes local workspace hands, not another port", () => {
+  const hands = COMMUNITY_CAPABILITY_REGISTRY.find(item => item.id === "local-hands");
+  const rpa = COMMUNITY_CAPABILITY_REGISTRY.find(item => item.id === "desktop-rpa");
+  assert.equal(hands?.available, true);
+  assert.equal(hands?.evidenceRequired, true);
+  assert.equal(rpa?.available, false);
 });
 
 test("free-first contract cannot silently upgrade", () => {

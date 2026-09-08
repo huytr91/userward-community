@@ -45,6 +45,8 @@ export const COMMUNITY_CAPABILITY_REGISTRY: CapabilityProfile[] = [
   { id: "local-file-parser", type: "tool", available: true, deterministic: true, capabilities: ["read-text", "read-office", "read-csv"], evidenceRequired: false },
   { id: "folder-patch", type: "tool", available: true, deterministic: true, capabilities: ["create-code", "update-code"], evidenceRequired: true },
   { id: "connected-llm", type: "model", available: true, deterministic: false, capabilities: ["chat", "analysis", "coding", "structured-output"], evidenceRequired: false },
+  { id: "local-hands", type: "tool", available: true, deterministic: true, capabilities: ["workspace-list", "workspace-read", "workspace-patch", "file-extract"], evidenceRequired: true },
+  { id: "desktop-rpa", type: "tool", available: false, deterministic: true, capabilities: ["desktop-ui-click"], evidenceRequired: true },
   { id: "terminal-runtime", type: "tool", available: false, deterministic: true, capabilities: ["run-code", "test", "install"], evidenceRequired: true },
   { id: "media-renderer", type: "tool", available: false, deterministic: true, capabilities: ["render-video", "generate-audio", "generate-image"], evidenceRequired: true },
   { id: "external-actions", type: "tool", available: false, deterministic: true, capabilities: ["email", "publish", "deploy", "transaction"], evidenceRequired: true },
@@ -68,7 +70,7 @@ export function createGoalContract(input: {
     forbiddenActions: ["Silent paid upgrade", "Unapproved file write", "Unsupported completion claim", "Send unrelated context"],
     privacyLevel: input.hasAttachments ? "provider_allowed" : "local",
     qualityTarget: input.budgetMode === "quality" ? "verified" : input.budgetMode === "economy" ? "draft" : "standard",
-    budget: { mode: input.freeEligible ? "free-first" : input.budgetMode, allowPaidUpgrade: !input.freeEligible, maxRetries: 2 },
+    budget: { mode: input.freeEligible ? "free-first" : input.budgetMode, allowPaidUpgrade: !input.freeEligible, maxRetries: 0 },
   };
 }
 
