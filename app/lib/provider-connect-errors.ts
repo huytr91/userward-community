@@ -17,12 +17,39 @@ export type ClassifiedProviderError = {
   code: ProviderConnectCode;
 };
 
-/** Hard cap for one chat/test provider round-trip (retries + stream included). */
+/** Hard cap for one non-streaming chat/test provider round-trip. */
 export const PROVIDER_TOTAL_TIMEOUT_MS = 60_000;
-/** Abort an idle upstream stream when no bytes arrive for this long. */
-export const STREAM_IDLE_TIMEOUT_MS = 30_000;
+/**
+ * Abort an idle upstream/client stream when no bytes arrive for this long.
+ * While tokens keep arriving, generation may continue up to PROVIDER_STREAMING_WALL_MS.
+ */
+export const STREAM_IDLE_TIMEOUT_MS = 4 * 60_000;
+/** Absolute safety ceiling for an active streaming reply (Ollama/local may be slow). */
+export const PROVIDER_STREAMING_WALL_MS = 30 * 60_000;
 /** Give a hanging OpenRouter stream attempt this long before trying the next fallback. */
 export const OPENROUTER_STREAM_ATTEMPT_MS = 10_000;
+
+/** Prefer a long wall for streams so slow local models can finish; idle silence still cuts hung sockets. */
+export function providerRoundTripTimeoutMs(stream: boolean): number {
+  return stream ? PROVIDER_STREAMING_WALL_MS : PROVIDER_TOTAL_TIMEOUT_MS;
+}
+
+/**
+ * Rough ETA from observed stream rate. Returns null until enough signal exists.
+ * targetChars defaults to a modest completion size when unknown.
+ */
+export function estimateStreamEtaSeconds(input: {
+  receivedChars: number;
+  elapsedMs: number;
+  targetChars?: number;
+}): number | null {
+  if (input.elapsedMs < 800 || input.receivedChars < 40) return null;
+  const rate = input.receivedChars / (input.elapsedMs / 1000);
+  if (!(rate > 0)) return null;
+  const target = Math.max(input.targetChars ?? 800, input.receivedChars + 80);
+  const remaining = Math.max(0, target - input.receivedChars);
+  return Math.max(1, Math.ceil(remaining / rate));
+}
 
 const timeoutPattern = /timeout|timed out|aborted|quá lâu/i;
 const connectionPattern = /econnrefused|connection refused|failed to fetch|networkconnectionlost|network connection|connect\(\) failed|connection reset|enotfound|ehostunreach|econnreset|socket hang up|network error/i;
@@ -97,7 +124,7 @@ export function classifyProviderFetchError(error: unknown, provider?: string): C
       return {
         status: 504,
         code: "ollama_timeout",
-        error: "Ollama phản hồi quá lâu tại 127.0.0.1:11434. Hãy thử lại sau khi model đã tải xong.",
+        error: "Ollama phản hồi quá lâu tại 127.0.0.1:11434 (im lặng quá lâu hoặc vượt trần streaming). Hãy thử lại sau khi model đã tải xong, hoặc chọn model nhẹ hơn.",
       };
     }
     return {

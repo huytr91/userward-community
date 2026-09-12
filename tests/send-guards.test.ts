@@ -38,6 +38,21 @@ test("Confirm & run stays enabled with draft even if interview/clarify incomplet
   }), true);
 });
 
+test("brief submit can require complete interview slots", () => {
+  assert.equal(composerRunDisabled({
+    hasProvider: true,
+    hasDraftOrAttachments: true,
+    interviewComplete: false,
+    requireInterviewComplete: true,
+  }), true);
+  assert.equal(composerRunDisabled({
+    hasProvider: true,
+    hasDraftOrAttachments: true,
+    interviewComplete: true,
+    requireInterviewComplete: true,
+  }), false);
+});
+
 test("policy ask never disables Confirm & run", () => {
   assert.equal(composerRunDisabled({
     hasProvider: true,
@@ -56,7 +71,12 @@ test("page send path posts a timeline card instead of a silent folder return", (
   assert.match(page, /setEntries\(prev => \[\.\.\.prev, userEntry, folderEntry\]\)/);
   assert.doesNotMatch(page, /if \(executionMode === "execute" && !folderHandle\) \{ setWorkspaceError/);
   assert.match(page, /composerRunDisabled/);
-  assert.doesNotMatch(page, /completeBriefThenSend|clarifyCardThenSend|confirmBriefBeforeRun/);
+  assert.match(page, /interviewSlotsComplete/);
+  assert.match(page, /briefSlotsIncomplete/);
+  assert.match(page, /UNKNOWN_CONTENT_RULE/);
+  assert.match(page, /ORDINARY_CHAT_RULE/);
+  assert.match(page, /isActionableGoal/);
+  assert.doesNotMatch(page, /continueWithoutAnswers|skipAnswers/);
   assert.match(page, /pendingInterview/);
   assert.match(page, /interview-card/);
   assert.match(page, /shouldOfferPostSendInterview/);
@@ -68,7 +88,7 @@ test("page send path posts a timeline card instead of a silent folder return", (
 });
 
 test("folder-required copy names both recovery actions", () => {
-  assert.match(translate("vi", "missingFolderAction"), /Đổi folder/);
+  assert.match(translate("vi", "missingFolderAction"), /Đổi thư mục/);
   assert.match(translate("vi", "missingFolderAction"), /Chat thường/);
   assert.match(translate("en", "missingFolderAction"), /Change folder/);
   assert.match(translate("en", "missingFolderAction"), /\bChat\b/);

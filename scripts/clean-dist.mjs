@@ -39,7 +39,7 @@ async function waitUntilPortFree(port, ms = 12000) {
 const pids = listeningPids(USERWARD_PORT);
 if (pids.length) {
   console.warn(
-    `Stopping Userward on 127.0.0.1:${USERWARD_PORT} (pid ${pids.join(", ")}) so dist can be rebuilt without corrupting the live UI.`,
+    `Rebuild only: stopping Userward on 127.0.0.1:${USERWARD_PORT} (pid ${pids.join(", ")}) so dist can be replaced without corrupting the live UI. Everyday use does not need this kill.`,
   );
   for (const pid of pids) {
     try {

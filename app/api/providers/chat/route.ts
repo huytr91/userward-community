@@ -205,7 +205,7 @@ export async function POST(request: Request) {
     }
     const capabilityError = validateModelRequest(inferModelCapability(provider, model), attachments, executionMode === "execute");
     if (capabilityError) return json({ error: capabilityError }, 422);
-    abort = createProviderAbort(PROVIDER_TOTAL_TIMEOUT_MS, request.signal);
+    abort = createProviderAbort(providerRoundTripTimeoutMs(Boolean(body.stream)), request.signal);
     const callProvider = (url: string, init: RequestInit = {}) => fetch(url, { ...init, signal: abort!.signal, cache: "no-store" });
 
     let response: Response;
@@ -320,6 +320,6 @@ export async function POST(request: Request) {
   }
 }
 import { inferModelCapability, validateModelRequest } from "../../../lib/model-capabilities.ts";
-import { classifyProviderFetchError, createProviderAbort, isTimeoutError, mapOpenRouterHttpError, OPENROUTER_STREAM_ATTEMPT_MS, PROVIDER_TOTAL_TIMEOUT_MS, STREAM_IDLE_TIMEOUT_MS } from "../../../lib/provider-connect-errors.ts";
+import { classifyProviderFetchError, createProviderAbort, isTimeoutError, mapOpenRouterHttpError, OPENROUTER_STREAM_ATTEMPT_MS, providerRoundTripTimeoutMs, STREAM_IDLE_TIMEOUT_MS } from "../../../lib/provider-connect-errors.ts";
 import { buildOpenRouterAttempts, openRouterErrorMessage, openRouterPayloadExtras, shouldRetryOpenRouterPrivacy } from "../../../lib/openrouter-routing.ts";
 import { normalizeProviderUsage } from "../../../lib/chat-contract.ts";

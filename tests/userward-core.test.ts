@@ -5,6 +5,14 @@ import { compileContextPack, COMMUNITY_CAPABILITY_REGISTRY, createExecutionRecei
 test("constitution encodes user-aligned routing and approval", () => {
   assert.ok(USER_INTEREST_CONSTITUTION.some(rule => rule.includes("least expensive qualified")));
   assert.ok(USER_INTEREST_CONSTITUTION.some(rule => rule.includes("without explicit")));
+  assert.ok(USER_INTEREST_CONSTITUTION.some(rule => /invent|business requirements/i.test(rule)));
+  assert.ok(USER_INTEREST_CONSTITUTION.some(rule => /unknown|unverified/i.test(rule)));
+});
+
+test("goal contract forbids inventing business evidence", () => {
+  const goal = createGoalContract({ objective: "Build email automation", executionMode: "execute", hasFolder: true, hasAttachments: false, freeEligible: false, budgetMode: "balanced" });
+  assert.ok(goal.forbiddenActions.some(item => /Invent destinations|Generate without confirmed/i.test(item)));
+  assert.ok(goal.constraints.some(item => /Never guess user intent/i.test(item)));
 });
 
 test("community registry exposes local workspace hands, not another port", () => {

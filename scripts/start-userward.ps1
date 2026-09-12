@@ -33,7 +33,7 @@ function Stop-UserwardPort {
   if (-not $listeners.Count) { return }
   $processIds = @($listeners | ForEach-Object { $_.OwningProcess }) | Where-Object { $_ } | Select-Object -Unique
   foreach ($processId in $processIds) {
-    Write-Host "Stopping process $processId on port $UserwardPort so a clean rebuild can replace the live UI..." -ForegroundColor Yellow
+    Write-Host "Rebuild: stopping process $processId on port $UserwardPort so dist can be replaced..." -ForegroundColor Yellow
     Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
   }
   $deadline = (Get-Date).AddSeconds(12)
@@ -89,9 +89,19 @@ if (-not (Test-Path "node_modules")) {
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
-# Rebuild needs Userward's own port free. Do NOT touch port 3000 (RPA).
-if ($needsBuild -or (Get-UserwardPortListeners).Count) {
+# Kill only when a rebuild must replace files the live process is serving.
+# Stable everyday use does not need a kill. Prefer: edit → close START → start again.
+# Auto-kill is an extra rebuild safety, not a requirement of localhost itself.
+# Do NOT touch port 3000 (RPA).
+if ($needsBuild) {
+  if ((Get-UserwardPortListeners).Count) {
+    Write-Host "Rebuild needed: stopping the process on port $UserwardPort so dist can be replaced safely..." -ForegroundColor Yellow
+  }
   Stop-UserwardPort
+} elseif ((Get-UserwardPortListeners).Count -and -not $alreadyHealthy) {
+  Write-Host "Port $UserwardPort is in use but Userward is not healthy." -ForegroundColor Red
+  Write-Host "Close the other START-USERWARD window (or that process), then run START-USERWARD.cmd again."
+  exit 1
 }
 
 if ($needsBuild -or -not (Test-Path "dist\server\index.js")) {

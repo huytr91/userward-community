@@ -40,6 +40,9 @@ test("start script rebuilds when source is newer than dist", () => {
   assert.match(start, /\$UserwardPort = 3001/);
   assert.match(start, /npm\.cmd run build/);
   assert.match(start, /LastWriteTimeUtc/);
+  assert.match(start, /if \(\$needsBuild\)/);
+  assert.match(start, /Everyday use does not need|Stable everyday use does not need a kill|Auto-kill is an extra rebuild safety/i);
+  assert.doesNotMatch(start, /\$needsBuild -or \(Get-UserwardPortListeners\)\.Count/);
   assert.doesNotMatch(start, /Stop-Port3000/);
 });
 

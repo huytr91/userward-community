@@ -1,7 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { POST } from "../app/api/providers/test/route.ts";
-import { classifyProviderFetchError, isOpenRouterPrivacyRestriction, mapOpenRouterHttpError, ollamaNoModelsError } from "../app/lib/provider-connect-errors.ts";
+import {
+  classifyProviderFetchError,
+  estimateStreamEtaSeconds,
+  isOpenRouterPrivacyRestriction,
+  mapOpenRouterHttpError,
+  ollamaNoModelsError,
+  PROVIDER_STREAMING_WALL_MS,
+  PROVIDER_TOTAL_TIMEOUT_MS,
+  providerRoundTripTimeoutMs,
+  STREAM_IDLE_TIMEOUT_MS,
+} from "../app/lib/provider-connect-errors.ts";
 import { translate } from "../app/lib/i18n.ts";
 
 const originalFetch = globalThis.fetch;
@@ -37,6 +47,17 @@ test("Ollama timeout is 504 and empty catalog is 422", () => {
   assert.equal(timedOut.code, "ollama_timeout");
   assert.equal(ollamaNoModelsError.status, 422);
   assert.equal(ollamaNoModelsError.code, "ollama_no_models");
+});
+
+test("streaming keeps a long wall and 4-minute idle silence", () => {
+  assert.equal(STREAM_IDLE_TIMEOUT_MS, 4 * 60_000);
+  assert.equal(PROVIDER_TOTAL_TIMEOUT_MS, 60_000);
+  assert.equal(PROVIDER_STREAMING_WALL_MS, 30 * 60_000);
+  assert.equal(providerRoundTripTimeoutMs(true), PROVIDER_STREAMING_WALL_MS);
+  assert.equal(providerRoundTripTimeoutMs(false), PROVIDER_TOTAL_TIMEOUT_MS);
+  assert.equal(estimateStreamEtaSeconds({ receivedChars: 10, elapsedMs: 100 }), null);
+  const eta = estimateStreamEtaSeconds({ receivedChars: 200, elapsedMs: 2000, targetChars: 800 });
+  assert.ok(eta != null && eta >= 1);
 });
 
 test("localized Ollama copy stays specific in Vietnamese and English", () => {

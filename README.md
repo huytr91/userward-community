@@ -23,6 +23,8 @@ http://127.0.0.1:3001
 
 Port **3000** is reserved for **AI agent RPA tools**. Closing the launcher window stops Userward. The server binds to loopback only and is not exposed to the LAN or Internet.
 
+**Stable use:** keep `START-USERWARD` open — no kill is needed. After you change code, close that window and start again (or let a rebuild stop the old process only while replacing `dist`). Auto-kill exists for rebuild safety; it is not required for everyday localhost use.
+
 ## Current status
 
 Early preview. Do not treat the app as a security boundary or use it for production automation without an independent review.
