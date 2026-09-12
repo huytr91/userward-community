@@ -1,10 +1,26 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { compileContextPack, createExecutionReceipt, createGoalContract, routeForUser, USER_INTEREST_CONSTITUTION } from "../app/lib/userward-core.ts";
+import { compileContextPack, COMMUNITY_CAPABILITY_REGISTRY, createExecutionReceipt, createGoalContract, routeForUser, USER_INTEREST_CONSTITUTION } from "../app/lib/userward-core.ts";
 
 test("constitution encodes user-aligned routing and approval", () => {
   assert.ok(USER_INTEREST_CONSTITUTION.some(rule => rule.includes("least expensive qualified")));
   assert.ok(USER_INTEREST_CONSTITUTION.some(rule => rule.includes("without explicit")));
+  assert.ok(USER_INTEREST_CONSTITUTION.some(rule => /invent|business requirements/i.test(rule)));
+  assert.ok(USER_INTEREST_CONSTITUTION.some(rule => /unknown|unverified/i.test(rule)));
+});
+
+test("goal contract forbids inventing business evidence", () => {
+  const goal = createGoalContract({ objective: "Build email automation", executionMode: "execute", hasFolder: true, hasAttachments: false, freeEligible: false, budgetMode: "balanced" });
+  assert.ok(goal.forbiddenActions.some(item => /Invent destinations|Generate without confirmed/i.test(item)));
+  assert.ok(goal.constraints.some(item => /Never guess user intent/i.test(item)));
+});
+
+test("community registry exposes local workspace hands, not another port", () => {
+  const hands = COMMUNITY_CAPABILITY_REGISTRY.find(item => item.id === "local-hands");
+  const rpa = COMMUNITY_CAPABILITY_REGISTRY.find(item => item.id === "desktop-rpa");
+  assert.equal(hands?.available, true);
+  assert.equal(hands?.evidenceRequired, true);
+  assert.equal(rpa?.available, false);
 });
 
 test("free-first contract cannot silently upgrade", () => {

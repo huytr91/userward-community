@@ -8,6 +8,8 @@ export const USER_INTEREST_CONSTITUTION = [
   "Send only the minimum necessary context and disclose what leaves the device.",
   "Perform no side effect without explicit, action-scoped approval.",
   "Make no completion claim without execution evidence.",
+  "Do not invent or silently assume missing business requirements; ask until slots that change the result are confirmed.",
+  "If a material fact is unknown, interview the user; never invent unverified content.",
   "Disclose the actual model, tool, cost, fallback, and failure.",
   "Never turn weak retrieval into a legal conclusion.",
   "Do not ask users to make technical decisions the manager can safely make.",
@@ -45,6 +47,8 @@ export const COMMUNITY_CAPABILITY_REGISTRY: CapabilityProfile[] = [
   { id: "local-file-parser", type: "tool", available: true, deterministic: true, capabilities: ["read-text", "read-office", "read-csv"], evidenceRequired: false },
   { id: "folder-patch", type: "tool", available: true, deterministic: true, capabilities: ["create-code", "update-code"], evidenceRequired: true },
   { id: "connected-llm", type: "model", available: true, deterministic: false, capabilities: ["chat", "analysis", "coding", "structured-output"], evidenceRequired: false },
+  { id: "local-hands", type: "tool", available: true, deterministic: true, capabilities: ["workspace-list", "workspace-read", "workspace-patch", "file-extract"], evidenceRequired: true },
+  { id: "desktop-rpa", type: "tool", available: false, deterministic: true, capabilities: ["desktop-ui-click"], evidenceRequired: true },
   { id: "terminal-runtime", type: "tool", available: false, deterministic: true, capabilities: ["run-code", "test", "install"], evidenceRequired: true },
   { id: "media-renderer", type: "tool", available: false, deterministic: true, capabilities: ["render-video", "generate-audio", "generate-image"], evidenceRequired: true },
   { id: "external-actions", type: "tool", available: false, deterministic: true, capabilities: ["email", "publish", "deploy", "transaction"], evidenceRequired: true },
@@ -62,13 +66,13 @@ export function createGoalContract(input: {
   return {
     objective,
     deliverables: input.executionMode === "execute" ? ["A reviewable project patch"] : ["A direct answer or analysis"],
-    constraints: ["Do not invent missing business requirements", "Label material assumptions and uncertainty"],
-    acceptanceCriteria: input.executionMode === "execute" ? ["Patch is valid", "Every changed file is listed", "User approves before writing"] : ["Answer addresses the stated objective", "Unsupported actions are stated plainly"],
+    constraints: ["Do not invent missing business requirements", "Never guess user intent for facts that change the result", "If a required business slot is missing, ask — do not generate a deliverable", "Label uncertainty only after asking; do not silently fill gaps"],
+    acceptanceCriteria: input.executionMode === "execute" ? ["Patch is valid", "Every changed file is listed", "User approves before writing", "Business slots confirmed by the user"] : ["Answer addresses the stated objective", "Unsupported actions are stated plainly", "No invented business facts"],
     allowedActions: ["Use the connected model", ...(input.hasAttachments ? ["Read user-attached files"] : []), ...(input.executionMode === "execute" && input.hasFolder ? ["Prepare a patch inside the approved folder"] : [])],
-    forbiddenActions: ["Silent paid upgrade", "Unapproved file write", "Unsupported completion claim", "Send unrelated context"],
+    forbiddenActions: ["Silent paid upgrade", "Unapproved file write", "Unsupported completion claim", "Send unrelated context", "Invent destinations, schedules, sources, or overwrite policy", "Generate without confirmed business evidence"],
     privacyLevel: input.hasAttachments ? "provider_allowed" : "local",
     qualityTarget: input.budgetMode === "quality" ? "verified" : input.budgetMode === "economy" ? "draft" : "standard",
-    budget: { mode: input.freeEligible ? "free-first" : input.budgetMode, allowPaidUpgrade: !input.freeEligible, maxRetries: 2 },
+    budget: { mode: input.freeEligible ? "free-first" : input.budgetMode, allowPaidUpgrade: !input.freeEligible, maxRetries: 0 },
   };
 }
 
