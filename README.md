@@ -53,7 +53,8 @@ Early preview. Do not treat the app as a security boundary or use it for product
 
 Working capabilities:
 
-- Clarify-before-generate gate: missing business facts are asked, not invented.
+- Clarify-before-generate gate: missing business facts are asked, not invented; interview is to clear the brief, not to refuse the user.
+- Soft write/GTM briefs ask objective and channel; thin “not enough data” replies reopen clarifying questions.
 - Optional on-device personal suggestions for frequent interview answers (off/clear anytime; never uploaded or used for training).
 - Bring your own API key for OpenRouter, OpenAI, Anthropic, Google, DeepSeek, Qwen, or Kimi; or connect to local models through Ollama without an API key.
 - Searchable project/chat history stored in the browser.
