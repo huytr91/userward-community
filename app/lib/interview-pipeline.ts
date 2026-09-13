@@ -1,109 +1,85 @@
 import { translate, type AppLocale } from "./i18n.ts";
+import {
+  buildOntologyInterviewQuestions,
+  classifyIntent,
+  RICH_DOMAIN_SLOT_IDS,
+  type IntentFamily,
+} from "./interview-ontology.ts";
+import { injectPersonalOptionsIntoQuestions, type PersonalPackState } from "./personal-interview-pack.ts";
 
 export type InterviewQuestion = { id: string; label: string; ask: string; options: string[]; multi?: boolean };
 /**
- * Local dictionary first. Shallow or uncovered goals set `needsModelInterview`
+ * Local ontology first. Shallow or uncovered goals set `needsModelInterview`
  * so Call A (interview-only) can merge tailored questions.
  */
 export type InterviewPlan = {
   questions: InterviewQuestion[];
-  source: "rule" | "dictionary" | "model";
+  source: "rule" | "dictionary" | "model" | "ontology";
   needsModelInterview?: boolean;
+  intentFamily?: IntentFamily | null;
+  domain?: string;
 };
 
-const WORK_ACTION =
-  /tạo|sửa|xây|viết|chạy|xử lý|giúp|lọc|tính|tổng hợp|chuẩn hóa|chuyển đổi|chuyển|đọc|parse|import|export|merge|join|validate|review|sync|extract|convert|transform|tự động|automation|workflow|phân tích|write|build|create|make|fix|implement|develop|generate|draft|design|analyze|analyse|check|compare|match|verify|reconcile|khớp|đối chiếu|so sánh|so khớp|đối soát|\blàm\b/;
+export { classifyIntent } from "./interview-ontology.ts";
+export type { IntentFamily, DomainPackId, ClassifiedIntent } from "./interview-ontology.ts";
 
-const WORK_ARTIFACT =
-  /file|excel|xlsx|csv|email|gmail|outlook|inbox|folder|thư mục|dữ liệu|dataset|bảng|table|report|báo cáo|script|workflow|pdf|docx|json|patch|attachment|đính kèm|imap/;
-
-const WORK_NEED =
-  /cần|muốn|giúp|help|need|want|please|xin |hãy |xử lý|đối chiếu|so khớp|check|compare/;
-
-/** Pure Q&A / explanation — not a work request (unless paired with artifacts + need). */
-const ORDINARY_QA =
-  /^(vì sao|tại sao|why\b|what is\b|what's\b|sao\s|how come\b|giải thích\s+(tại sao|vì sao)|làm sao\b|làm thế nào\b)/i;
-
-const DOMAIN_SLOT_IDS = new Set(["source", "destination", "schedule", "scope", "existing"]);
+/** True when the user is requesting work/deliverable scope, not ordinary Q&A. */
+export function isActionableGoal(draft: string, executionMode: "analyze" | "execute" = "analyze"): boolean {
+  const classified = classifyIntent(draft, executionMode);
+  return !classified.ordinary && classified.family != null;
+}
 
 /** Compare / reconcile style goals. */
 export function isCompareLikeGoal(draft: string): boolean {
-  return /check|compare|match|verify|reconcile|khớp|đối chiếu|so sánh|so khớp|đối soát/.test(draft.toLowerCase());
+  return classifyIntent(draft).family === "compare";
 }
 
-/**
- * Work intent: actionable deliverable / file / compare / automation work.
- * Not verb-only — artifacts + need phrases also count. Execute mode is always work.
- */
-export function isActionableGoal(draft: string, executionMode: "analyze" | "execute" = "analyze"): boolean {
-  if (executionMode === "execute") return true;
-  const q = draft.toLowerCase().trim();
-  if (!q) return false;
-  if (ORDINARY_QA.test(q) && !(WORK_ARTIFACT.test(q) && WORK_NEED.test(q))) return false;
-  if (isCompareLikeGoal(draft)) return true;
-  if (WORK_ACTION.test(q)) return true;
-  if (WORK_ARTIFACT.test(q) && WORK_NEED.test(q)) return true;
-  return false;
-}
-
-/** Local template is too thin to skip Call A (e.g. only outcome/evidence). */
+/** Local template is too thin to skip Call A. */
 export function isShallowLocalInterview(questions: InterviewQuestion[]): boolean {
   if (!questions.length) return true;
-  const domainHits = questions.filter(question => DOMAIN_SLOT_IDS.has(question.id)).length;
+  const domainHits = questions.filter(question => RICH_DOMAIN_SLOT_IDS.has(question.id)).length;
   if (domainHits >= 2) return false;
   return true;
 }
 
 /**
- * When the product does not already know a material business fact, ask the user in
- * interview form. Local templates first; shallow/miss → model interview (Call A).
+ * Ontology + domain packs first; shallow/miss → model interview (Call A).
+ * Optional personal pack injects frequent on-device answers as extra options.
  */
-export function buildInterviewPlan(draft: string, executionMode: "analyze" | "execute", locale: AppLocale = "en"): InterviewPlan {
-  const q = draft.toLowerCase();
-  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
-  if (!isActionableGoal(draft, executionMode)) return { questions: [], source: "rule" };
+export function buildInterviewPlan(
+  draft: string,
+  executionMode: "analyze" | "execute",
+  locale: AppLocale = "en",
+  personalPack?: PersonalPackState,
+): InterviewPlan {
+  const classified = classifyIntent(draft, executionMode);
+  if (classified.ordinary || !classified.family) return { questions: [], source: "rule", intentFamily: null, domain: classified.domain };
 
-  if (isCompareLikeGoal(draft)) {
-    return { questions: [], source: "rule", needsModelInterview: true };
-  }
-
-  const questions: InterviewQuestion[] = [];
-  const emailAutomation = /email|gmail|outlook|inbox|imap/.test(q) && /tự động|automation|workflow|lưu|save|lấy email|retrieve|forward/.test(q);
-  const dataFlow =
-    (/phân tích|analyze|analyse/.test(q) && /số liệu|csv|excel|xlsx|dữ liệu|dataset|statistics|thống kê|report|báo cáo/.test(q))
-    || /thống kê|số liệu|csv|excel|xlsx|dữ liệu|dataset|statistics/.test(q);
-  const hasPathOrFolder = /folder|thư mục|[a-z]:\\|onedrive|google drive|sharepoint/i.test(draft);
-  const hasSchedule = /mỗi |hàng |khi có|theo giờ|ngày|tuần|bấm chạy|when i|daily|every day|on click|schedule/.test(q);
-  const hasOutcome = /kết quả|deliverable|output|file |script|báo cáo|report|patch|json|csv|docx|pdf/.test(q);
-  const hasEvidenceHint = /đính kèm|attach|file đính|theo file|based on|từ file|from the|nguồn:|source:/.test(q);
-
-  if (emailAutomation && !/gmail|outlook|imap|email nguồn/.test(q)) {
-    questions.push({ id: "source", label: t("qSourceLabel"), ask: t("qSourceAsk"), options: [t("optGmail"), t("optOutlook"), t("optWorkEmail")] });
-  }
-  if (emailAutomation && !hasPathOrFolder) {
-    questions.push({ id: "destination", label: t("qDestLabel"), ask: t("qDestAsk"), options: [t("optLocalFolder"), t("optGDrive"), t("optOneDrive")] });
-  }
-  if (emailAutomation && !hasSchedule) {
-    questions.push({ id: "schedule", label: t("qScheduleLabel"), ask: t("qScheduleAsk"), options: [t("optWhenIRun"), t("optWhenNewData"), t("optDaily")] });
-  }
-  if (emailAutomation && !/pdf|excel|xlsx|eml|đính kèm|nội dung|tiêu đề|subject|người gửi|toàn bộ email/.test(q)) {
-    questions.push({ id: "scope", label: t("qScopeLabel"), ask: t("qScopeAsk"), options: [t("optWholeEmail"), t("optAttachmentsOnly"), t("optContentAndFiles")] });
-  }
-  if (executionMode === "execute" && !/được sửa|không sửa|ghi đè|tạo mới|giữ nguyên|overwrite|existing files|create new only/.test(q)) {
-    questions.push({ id: "existing", label: t("qExistingLabel"), ask: t("qExistingAsk"), options: [t("optYes"), t("optNo")] });
-  }
-  if (dataFlow && !hasEvidenceHint) {
-    questions.push({ id: "evidence", label: t("qEvidenceLabel"), ask: t("qEvidenceAsk"), options: [t("optEvidenceAttached"), t("optEvidencePaste"), t("optEvidenceDescribe")] });
-  }
-  if (!hasOutcome && (emailAutomation || dataFlow || executionMode === "execute")) {
-    questions.push({ id: "outcome", label: t("qOutcomeLabel"), ask: t("qOutcomeAsk"), options: [t("optOutcomeAnalysis"), t("optOutcomeDoc"), t("optOutcomeScript"), t("optOutcomeOther")] });
+  let questions = buildOntologyInterviewQuestions({ draft, executionMode, locale, classified });
+  if (personalPack?.enabled) {
+    questions = injectPersonalOptionsIntoQuestions({
+      questions,
+      state: personalPack,
+      intent: classified.family,
+    });
   }
 
   const compact = questions.slice(0, 4);
-  if (!compact.length || isShallowLocalInterview(compact)) {
-    return { questions: compact, source: compact.length ? "dictionary" : "rule", needsModelInterview: true };
+  if (!compact.length || isShallowLocalInterview(compact) || classified.family === "compare") {
+    return {
+      questions: compact,
+      source: compact.length ? "ontology" : "rule",
+      needsModelInterview: true,
+      intentFamily: classified.family,
+      domain: classified.domain,
+    };
   }
-  return { questions: compact, source: "dictionary" };
+  return {
+    questions: compact,
+    source: "ontology",
+    intentFamily: classified.family,
+    domain: classified.domain,
+  };
 }
 
 /** Offline / model-failure card so the user is never blocked without questions. */
@@ -158,7 +134,7 @@ export function isInterviewSlotFilled(answer: string | undefined): boolean {
   return !UNSPECIFIED_SLOT.test(value);
 }
 
-/** Filled but still too vague to proceed with work. */
+/** Filled but still too vague to proceed with work (CLEAR-lite). */
 export function isInterviewAnswerClear(answer: string | undefined): boolean {
   if (!isInterviewSlotFilled(answer)) return false;
   const value = (answer || "").trim();

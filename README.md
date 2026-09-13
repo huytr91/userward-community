@@ -5,9 +5,28 @@ AI software should stand with the person who pays for tokens and lives with the 
 > **AI that answers to you.**  
 > *Context, because tokens are yours.*
 
-You run Userward on your own machine. There is no Userward cloud account. You describe the work; the app asks only the facts that change the outcome (where to save, when to run), packs the smallest honest context, then calls a model. It does not silently upgrade a free route to a paid one. It does not write files until you approve. Token and cost figures are measured when the provider sends them, or estimated from the text when it does not.
+You run Userward on your own machine. There is no Userward cloud account. You describe the work. **If a material fact is missing, Userward asks first — it does not invent your intent, destinations, schedules, or file contents just to finish a reply.** After you confirm, it packs the smallest honest context and calls a model. It does not silently upgrade a free route to a paid one. It does not write files until you approve. Token and cost figures are measured when the provider sends them, or estimated from the text when it does not.
 
 The **Minimum Context Engine** and **User Interest Constitution** encode that stance: tool before model, least-expensive qualified routing, minimum necessary context, no unapproved side effect, and no completion claim without evidence. Replies can include an inspectable execution receipt.
+
+## Clarify before generate
+
+Most assistants fill gaps silently. Userward treats unknown business facts as a hard stop for work products:
+
+1. **Detect work intent** — eight families (build, analyze, transform, compare, automate, write, decide, research), with domain packs for coding, data/Excel, and business ops.
+2. **Interview first** — short choice cards plus a free-text answer under each question.
+3. **Model interview only when local templates are thin** — that call may ask questions; it must not ship a tutorial, script, or “done” answer.
+4. **Generate only after slots are clear** — vague answers (“ok”, “no special requirement”) trigger follow-ups instead of a fake completion.
+
+### Personal suggestions on this device
+
+Optional **Remember choices on this device** stores answers you use often in a private suggestion pack in the browser (local only). After the same clear answer appears often enough, later interviews can offer it as a suggestion so you repeat yourself less. Defaults are never locked — you can always pick another option or write your own.
+
+- Nothing from this pack is sent to a Userward server.
+- It is not used to train a model.
+- You can turn it off or **Clear personal memory** anytime in Settings. Clearing all local data also removes it.
+
+Ordinary chat still gets a direct answer. Folder writes still need your approval. An inspectable execution receipt can show what was measured versus assumed.
 
 The interface detects the browser/operating-system language on first launch, remembers manual language changes, and currently provides core navigation in English, Vietnamese, Spanish, French, German, Japanese, Korean, and Chinese. Unsupported locales fall back to English.
 
@@ -31,6 +50,8 @@ Early preview. Do not treat the app as a security boundary or use it for product
 
 Working capabilities:
 
+- Clarify-before-generate gate: missing business facts are asked, not invented.
+- Optional on-device personal suggestions for frequent interview answers (off/clear anytime; never uploaded or used for training).
 - Bring your own API key for OpenRouter, OpenAI, Anthropic, Google, DeepSeek, Qwen, or Kimi; or connect to local models through Ollama without an API key.
 - Searchable project/chat history stored in the browser.
 - Optional browser-granted folder access for previewing file patches.

@@ -25,7 +25,7 @@ import {
 
 test("email automation asks where to save and when, not architecture", () => {
   const plan = buildInterviewPlan("Tạo automation lấy email và lưu file", "analyze");
-  assert.equal(plan.source, "dictionary");
+  assert.equal(plan.source, "ontology");
   assert.notEqual(plan.needsModelInterview, true);
   assert.ok(plan.questions.some(question => question.id === "destination" || question.id === "schedule"));
   assert.ok(!plan.questions.some(question => question.id === "platform" || question.id === "audience"));
