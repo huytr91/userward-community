@@ -521,9 +521,8 @@ export default function Home() {
     setWorkspaceError("");
     try {
       if (!("showDirectoryPicker" in window)) throw new Error(t("folderPickerUnsupported"));
-      const remembered = folderHandlesRef.current[activeProjectId] || await folderStore.get(activeProjectId).catch(()=>null);
-      const restored = remembered && await (remembered as any).requestPermission?.({mode:"readwrite"}).catch(()=>"denied") === "granted" ? remembered : null;
-      const handle = restored || await (window as any).showDirectoryPicker({ mode: "readwrite" }) as FileSystemDirectoryHandle;
+      // Always open the picker — "Change folder" must not silently reuse a remembered handle.
+      const handle = await (window as any).showDirectoryPicker({ mode: "readwrite" }) as FileSystemDirectoryHandle;
       folderHandlesRef.current[activeProjectId] = handle; await folderStore.set(activeProjectId,handle); setFolderHandle(handle); setExecutionMode("execute"); const found = await scanFolder(handle);
       setProjectList(prev => prev.map(project => project.id === activeProjectId ? { ...project, folderName: handle.name } : project));
       if (found[0]) await openWorkspaceFile(found[0]);
@@ -1052,7 +1051,7 @@ export default function Home() {
         </div>)}
       </div>
       <div className="composer-wrap" ref={composerWrapRef}>
-        <div className="work-mode"><button className={executionMode==="analyze"?"active":""} onClick={()=>setExecutionMode("analyze")}><b>{t("normalChat")}</b><span>{t("normalChatHint")}</span></button><button className={executionMode==="execute"?"active":""} onClick={()=>folderHandle?setExecutionMode("execute"):chooseFolder()}><b>{t("projectWork")}</b><span>{folderHandle?`${t("folderPrefix")} ${folderHandle.name}`:t("chooseFolderOnDevice")}</span></button>{executionMode==="execute"&&<button className="change-folder" onClick={chooseFolder}>{t("changeFolder")}</button>}</div>
+        <div className="work-mode"><button className={executionMode==="analyze"?"active":""} onClick={()=>setExecutionMode("analyze")}><b>{t("normalChat")}</b><span>{t("normalChatHint")}</span></button><button className={executionMode==="execute"?"active":""} onClick={()=>folderHandle?setExecutionMode("execute"):chooseFolder()}><b>{t("projectWork")}</b><span>{folderHandle?`${t("folderPrefix")} ${folderHandle.name}`:t("chooseFolderOnDevice")}</span></button>{executionMode==="execute"&&<button type="button" className="change-folder" onClick={chooseFolder}>{t("changeFolder")}</button>}</div>
         {executionMode==="execute"&&!folderHandle&&<div className="folder-required-banner"><b>{t("missingFolderTitle")}</b><p>{t("missingFolderMessage")} {t("missingFolderAction")}</p><div><button type="button" className="primary" onClick={chooseFolder}>{t("changeFolder")}</button><button type="button" onClick={()=>setExecutionMode("analyze")}>{t("normalChat")}</button></div></div>}
         {sending&&<div className="processing-card"><span className="processing-spinner"/><div><b>{t("processing")}</b><small>{t("processingHint")}</small></div><em>{t("running")}</em></div>}
         {!provider ? <div className="connection-warning"><span>!</span><p><b>{t("noModelYet")}</b> {t("connectToStart")}</p><button onClick={()=>setProvidersOpen(true)}>{t("connectModel")}</button></div> : <div className="connected-bar"><span>✓</span><p><b>{provider}</b> · {model}</p><button onClick={disconnectProvider}>{t("disconnect")}</button></div>}
