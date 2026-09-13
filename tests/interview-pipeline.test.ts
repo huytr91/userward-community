@@ -5,22 +5,29 @@ import {
   buildInterviewPlan,
   buildUnclearFollowUpQuestions,
   effectiveInterviewAnswers,
+  filterMetaInterviewQuestions,
   interviewSlotsComplete,
   isActionableGoal,
   isCompareLikeGoal,
   isInterviewAnswerClear,
   isInterviewSlotFilled,
+  isKnowledgeQuizQuestion,
   isShallowLocalInterview,
   localFallbackInterviewQuestions,
   mergeInterviewQuestions,
   missingInterviewSlotIds,
   parseModelInterviewQuestions,
+  resolveCallAInterviewResult,
   shouldMarkClarificationComplete,
   shouldOfferPostSendInterview,
   unclearInterviewSlotIds,
   INTERVIEW_ONLY_RULE,
   ORDINARY_CHAT_RULE,
+  PASSTHROUGH_GENERATE_RULE,
+  DELIVERABLE_AFTER_BRIEF_RULE,
   UNKNOWN_CONTENT_RULE,
+  looksLikeInsufficientAnswer,
+  buildContextGapFollowUpQuestions,
 } from "../app/lib/interview-pipeline.ts";
 
 test("email automation asks where to save and when, not architecture", () => {
@@ -38,21 +45,26 @@ test("work intent catches need+artifact without classic verbs", () => {
   assert.equal(isActionableGoal("random note", "execute"), true);
 });
 
-test("unfamiliar or shallow local plans request model interview", () => {
+test("open analysis and data packs prefer local interview over Call A", () => {
   const odd = buildInterviewPlan("Phân tích một ý tưởng lạ", "analyze");
-  assert.equal(odd.needsModelInterview, true);
+  assert.equal(odd.lane, "local_interview");
+  assert.notEqual(odd.needsModelInterview, true);
+  assert.ok(odd.questions.some(question => question.id === "output_shape" || question.id === "timeframe"));
   const data = buildInterviewPlan("Phân tích số liệu doanh thu quý này", "analyze", "en");
-  assert.equal(data.needsModelInterview, true);
-  assert.ok(isShallowLocalInterview(data.questions));
-  assert.match(INTERVIEW_ONLY_RULE, /Do not produce work products/i);
+  assert.equal(data.lane, "local_interview");
+  assert.notEqual(data.needsModelInterview, true);
+  assert.equal(isShallowLocalInterview(data.questions, "hard"), false);
+  assert.match(INTERVIEW_ONLY_RULE, /Never quiz them on the subject matter/i);
 });
 
-test("compare email vs excel triggers model interview", () => {
+test("compare email vs excel uses local pack when slots are rich", () => {
   const goal = "giờ có 1 email và 1 file excel, cần check xem bảng trong body email và file excel xem có khớp nhau về cột số tiền";
   assert.equal(isActionableGoal(goal), true);
   assert.equal(isCompareLikeGoal(goal), true);
   const plan = buildInterviewPlan(goal, "analyze", "vi");
-  assert.equal(plan.needsModelInterview, true);
+  assert.equal(plan.lane, "local_interview");
+  assert.notEqual(plan.needsModelInterview, true);
+  assert.ok(plan.questions.some(question => question.id === "match_criteria"));
 });
 
 test("English interview chrome has no Vietnamese leftovers", () => {
@@ -105,7 +117,60 @@ test("merge and parse model interview questions", () => {
   assert.ok(merged.some(question => question.id === "cols"));
   assert.ok(merged.length <= 4);
   assert.deepEqual(parseModelInterviewQuestions("Here is a tutorial step 1"), []);
-  assert.match(buildInterviewOnlyPrompt("check email vs excel", "en", seed), /SEED QUESTIONS/);
+  assert.match(buildInterviewOnlyPrompt("check email vs excel", "en", seed, { intentFamily: "compare", allowedSlotIds: ["match_criteria"] }), /ALLOWED SLOT IDS/);
+});
+
+test("Call A quiz questions are filtered; soft fail uses meta fallback before passthrough", () => {
+  const quiz = {
+    id: "cause",
+    label: "Cause",
+    ask: "Nguyên nhân chính khiến giá vàng giảm là gì?",
+    options: ["USD mạnh", "Lãi suất", "Cung cầu"],
+  };
+  assert.equal(isKnowledgeQuizQuestion(quiz), true);
+  assert.equal(filterMetaInterviewQuestions([quiz], ["timeframe", "output_shape"]).length, 0);
+  const meta = {
+    id: "timeframe",
+    label: "Period",
+    ask: "Which period should this cover?",
+    options: ["This week", "This month", "Open"],
+  };
+  const kept = resolveCallAInterviewResult({
+    seed: [meta, { id: "output_shape", label: "Out", ask: "What output shape do you want?", options: ["Summary", "Checklist"] }],
+    modelQuestions: [quiz],
+    gate: "soft",
+    allowPassthroughOnCallAFail: true,
+    allowedSlotIds: ["timeframe", "output_shape"],
+  });
+  assert.equal(kept.action, "interview");
+  if (kept.action === "interview") assert.ok(kept.questions.every(question => question.id !== "cause"));
+  const softFail = resolveCallAInterviewResult({
+    seed: [],
+    modelQuestions: [quiz],
+    gate: "soft",
+    allowPassthroughOnCallAFail: true,
+    allowedSlotIds: ["timeframe"],
+  });
+  assert.equal(softFail.action, "interview");
+  if (softFail.action === "interview") {
+    assert.ok(softFail.questions.some(question => question.id === "timeframe" || question.id === "output_shape"));
+  }
+  const hard = resolveCallAInterviewResult({
+    seed: [],
+    modelQuestions: [quiz],
+    gate: "hard",
+    allowPassthroughOnCallAFail: false,
+  });
+  assert.equal(hard.action, "interview");
+  assert.match(PASSTHROUGH_GENERATE_RULE, /PASSTHROUGH GENERATE/);
+});
+
+test("thin refusals are detected; deliverable rule forbids empty stop", () => {
+  assert.equal(looksLikeInsufficientAnswer("Không đủ thông tin để viết chiến lược. Chỉ có thể đưa khung chung."), true);
+  assert.equal(looksLikeInsufficientAnswer("Here is a concrete 3-post plan for TikTok with hooks and CTAs.\n\n1. ...\n2. ..."), false);
+  assert.match(DELIVERABLE_AFTER_BRIEF_RULE, /Forbidden ending/i);
+  const gaps = buildContextGapFollowUpQuestions("en", "viral go-to-market plan");
+  assert.ok(gaps.some(question => question.id === "objective" || question.id === "channel"));
 });
 
 test("unknown content rule forbids inventing unverified facts", () => {

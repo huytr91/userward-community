@@ -7,7 +7,7 @@ import { compileContextPack, createExecutionReceipt, createGoalContract, routeFo
 import { buildRecentConversation, chunkText, estimateTurnUsage, parsePendingPatch, sumConversationUsage, type SafePendingPatch } from "./lib/chat-contract";
 import { inferModelCapability, type ModelCapability } from "./lib/model-capabilities";
 import { extractOfficeText, OFFICE_FILE, TEXT_FILE } from "./lib/file-extraction";
-import { buildInterviewOnlyPrompt, buildInterviewPlan, buildUnclearFollowUpQuestions, effectiveInterviewAnswers, interviewSlotsComplete, isActionableGoal, isInterviewSlotFilled, localFallbackInterviewQuestions, mergeInterviewQuestions, parseModelInterviewQuestions, shouldMarkClarificationComplete, shouldOfferPostSendInterview, unclearInterviewSlotIds, ORDINARY_CHAT_RULE, UNKNOWN_CONTENT_RULE, type InterviewQuestion } from "./lib/interview-pipeline";
+import { buildContextGapFollowUpQuestions, buildInterviewOnlyPrompt, buildInterviewPlan, buildUnclearFollowUpQuestions, effectiveInterviewAnswers, interviewSlotsComplete, isActionableGoal, isInterviewSlotFilled, looksLikeInsufficientAnswer, parseModelInterviewQuestions, resolveCallAInterviewResult, shouldMarkClarificationComplete, shouldOfferPostSendInterview, unclearInterviewSlotIds, DELIVERABLE_AFTER_BRIEF_RULE, ORDINARY_CHAT_RULE, PASSTHROUGH_GENERATE_RULE, UNKNOWN_CONTENT_RULE, type InterviewPlan, type InterviewQuestion } from "./lib/interview-pipeline";
 import {
   clearPersonalPackInStorage,
   emptyPersonalPack,
@@ -25,12 +25,20 @@ import { composerRunDisabled, executeNeedsConnectedFolder } from "./lib/send-gua
 
 type Kind = "message" | "task" | "decision" | "result" | "file";
 type TokenUsage = { promptTokens: number; completionTokens: number; totalTokens: number; cost?: number };
-type Entry = { id: string; kind: Kind; title?: string; text: string; time: string; meta?: string; role?: "user" | "ai"; usage?: TokenUsage; receipt?: ExecutionReceipt; notice?: string };
+type Entry = { id: string; kind: Kind; title?: string; text: string; time: string; meta?: string; role?: "user" | "ai"; usage?: TokenUsage; receipt?: ExecutionReceipt; notice?: string; needsClarify?: boolean; clarifyGoal?: string };
 type Attachment = { name: string; size: number; text?: string; dataUrl?: string; mime?: string };
 type LocalProject = { id: string; name: string; kind?: "chat" | "project"; folderName?: string; group?: "active" | "archive"; entries: Entry[] };
 type WorkspaceFile = { path: string; handle: FileSystemFileHandle };
 type PendingPatch = SafePendingPatch;
-type PendingInterview = { entryId: string; goal: string; questions: InterviewQuestion[]; intentFamily?: string | null };
+type PendingInterview = {
+  entryId: string;
+  goal: string;
+  questions: InterviewQuestion[];
+  intentFamily?: string | null;
+  gate?: InterviewPlan["gate"];
+  allowedSlotIds?: string[];
+  allowPassthroughOnCallAFail?: boolean;
+};
 type CapabilityAssessment = { level: "supported" | "partial" | "unsupported"; title: string; canDo: string; cannotDo?: string; needs?: string };
 type ProductEdition = "personal" | "community";
 type FriendlyFailure = { title: string; message: string; action: string; meta: string };
@@ -44,7 +52,7 @@ const folderStore = {
 };
 
 const initialEntries: Entry[] = [
-  { id: "security-policy", kind: "decision", title: "Security baseline", text: "Local-first, quyền tối thiểu, tự động che secret trước khi gửi provider và mọi thay đổi file đều cần user xác nhận.", time: "Hôm nay", meta: "Bảo mật · Đã ghim" },
+  { id: "security-policy", kind: "decision", title: "Security baseline", text: "Local-first defaults, least privilege, automatic secret redaction before provider calls, and file changes only after your approval.", time: "Today", meta: "Security · Pinned" },
 ];
 
 const seedProjects: LocalProject[] = [
@@ -73,7 +81,7 @@ function ReceiptLine({ receipt, t, locale }: { receipt: ExecutionReceipt; t: Tra
   const numberLocale = locale === "vi" ? "vi-VN" : locale;
   return <details className="execution-receipt receipt-line">
     <summary><span>✓ {receipt.status === "preview" ? t("receiptPreview") : t("receiptChecked")}</span><small>{receipt.usage ? `${receipt.usage.totalTokens.toLocaleString(numberLocale)} token` : t("viewEvidence")}</small></summary>
-    <div className="receipt-grid"><section><b>AI</b><span>{receipt.model}</span><span>{receipt.tools.join(" · ")}</span></section><section><b>Data sent</b>{receipt.dataSent.map(item=><span key={item}>{item}</span>)}</section><section><b>Evidence</b>{receipt.evidence.map(item=><span key={item}>{item}</span>)}{!receipt.evidence.length&&<span>—</span>}</section><section><b>Cost</b><span>{receipt.usage?`${receipt.usage.totalTokens.toLocaleString(numberLocale)} token${receipt.usage.cost?` · $${receipt.usage.cost.toFixed(4)}`:""}`:"—"}</span><span>{receipt.changes.length?receipt.changes.join(" · "):"—"}</span></section></div>
+    <div className="receipt-grid"><section><b>AI</b><span>{receipt.model}</span><span>{receipt.tools.join(" · ")}</span></section><section><b>{t("receiptDataSent")}</b>{receipt.dataSent.map(item=><span key={item}>{item}</span>)}</section><section><b>{t("receiptEvidence")}</b>{receipt.evidence.map(item=><span key={item}>{item}</span>)}{!receipt.evidence.length&&<span>—</span>}</section><section><b>{t("receiptCost")}</b><span>{receipt.usage?`${receipt.usage.totalTokens.toLocaleString(numberLocale)} token${receipt.usage.cost?` · $${receipt.usage.cost.toFixed(4)}`:""}`:"—"}</span><span>{receipt.changes.length?receipt.changes.join(" · "):"—"}</span></section></div>
   </details>;
 }
 
@@ -343,6 +351,11 @@ export default function Home() {
   const apiKeyInputRef = useRef<HTMLInputElement>(null);
   const requestInFlightRef = useRef(false);
   const requestAbortRef = useRef<AbortController | null>(null);
+  const bypassInterviewRef = useRef(false);
+  const passthroughGenerateRef = useRef(false);
+  const lastWorkGoalRef = useRef("");
+  const lastInterviewAnchorRef = useRef("");
+  const thinClarifyRetriesRef = useRef(0);
   const connectionInFlightRef = useRef(false);
   const folderHandlesRef = useRef<Record<string, FileSystemDirectoryHandle>>({});
 
@@ -545,12 +558,14 @@ export default function Home() {
     setTimeout(() => setFlash(null), 2200);
   }
 
-  const requestModelInterview = async (entryId: string, goal: string, seed: InterviewQuestion[] = [], intentFamily?: string | null) => {
+  const requestModelInterview = async (entryId: string, goal: string, plan: InterviewPlan) => {
     if (!provider) { setProvidersOpen(true); return; }
     if (requestInFlightRef.current) return;
     requestInFlightRef.current = true;
     setSending(true);
     setUploadError("");
+    const seed = plan.questions;
+    const intentFamily = plan.intentFamily;
     const preparingId = `interview-prep-${Date.now()}`;
     setEntries(prev => [...prev, { id: preparingId, kind: "message", role: "ai", text: `${t("interviewPreparing")}\n${t("interviewPreparingHint")}`, time: t("justNow") }]);
     const selectedModel = provider === "OpenRouter" && projectIntent.freeEligible ? "openrouter/free" : model;
@@ -560,6 +575,45 @@ export default function Home() {
     const requestTimeoutId = window.setTimeout(() => {
       controller.abort(Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" }));
     }, requestWallMs);
+    const finishInterviewUi = () => {
+      window.clearTimeout(requestTimeoutId);
+      requestAbortRef.current = null;
+      requestInFlightRef.current = false;
+      setSending(false);
+      setTimeout(() => timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: "smooth" }), 30);
+    };
+    const applyResolution = (modelQuestions: InterviewQuestion[]) => {
+      const resolved = resolveCallAInterviewResult({
+        seed,
+        modelQuestions,
+        gate: plan.gate,
+        allowPassthroughOnCallAFail: plan.allowPassthroughOnCallAFail,
+        allowedSlotIds: plan.allowedSlotIds,
+        locale,
+      });
+      setEntries(prev => prev.filter(entry => entry.id !== preparingId));
+      if (resolved.action === "passthrough") {
+        bypassInterviewRef.current = true;
+        passthroughGenerateRef.current = true;
+        finishInterviewUi();
+        sendMessage(undefined, goal);
+        return;
+      }
+      setPendingInterview({
+        entryId,
+        goal,
+        questions: resolved.questions,
+        intentFamily,
+        gate: plan.gate,
+        allowedSlotIds: plan.allowedSlotIds,
+        allowPassthroughOnCallAFail: plan.allowPassthroughOnCallAFail,
+      });
+      setInterviewAnswers({});
+      setInterviewFreeText({});
+      setClarificationOverride("");
+      if (resolved.notice === "fallback") setUploadError(t("interviewModelFailed"));
+      finishInterviewUi();
+    };
     try {
       const response = await fetch("/api/providers/chat", {
         method: "POST",
@@ -573,43 +627,26 @@ export default function Home() {
           stream: false,
           budgetMode: projectIntent.freeEligible ? "free-first" : budgetTier,
           maxOutputTokens: 900,
-          messages: [{ role: "user", content: buildInterviewOnlyPrompt(goal, locale, seed) }],
+          messages: [{
+            role: "user",
+            content: buildInterviewOnlyPrompt(goal, locale, seed, {
+              intentFamily,
+              allowedSlotIds: plan.allowedSlotIds,
+            }),
+          }],
         }),
       });
       const data = await readProviderJson(response, provider, t);
-      const parsed = parseModelInterviewQuestions(data.text);
-      const merged = mergeInterviewQuestions(seed, parsed);
-      const questions = merged.length >= 2 ? merged : (seed.length >= 2 ? seed : localFallbackInterviewQuestions(locale));
-      const notice = parsed.length >= 1 || seed.length >= 2 ? "" : t("interviewModelFailed");
-      setEntries(prev => {
-        const withoutPrep = prev.filter(entry => entry.id !== preparingId);
-        return notice ? [...withoutPrep, { id: preparingId, kind: "message", role: "ai", text: notice, time: t("justNow") }] : withoutPrep;
-      });
-      setPendingInterview({ entryId, goal, questions, intentFamily });
-      setInterviewAnswers({});
-      setInterviewFreeText({});
-      setClarificationOverride("");
+      applyResolution(parseModelInterviewQuestions(data.text));
     } catch (error) {
       const timedOut = (controller.signal.reason instanceof Error && controller.signal.reason.name === "TimeoutError")
         || (error instanceof Error && error.name === "TimeoutError");
       if ((error as DOMException)?.name === "AbortError" && !timedOut) {
         setEntries(prev => prev.filter(entry => entry.id !== preparingId));
+        finishInterviewUi();
       } else {
-        const questions = seed.length >= 2 ? seed : localFallbackInterviewQuestions(locale);
-        setEntries(prev => prev.map(entry => entry.id === preparingId
-          ? { ...entry, text: t("interviewModelFailed"), time: t("justNow") }
-          : entry));
-        setPendingInterview({ entryId, goal, questions, intentFamily });
-        setInterviewAnswers({});
-        setInterviewFreeText({});
-        setClarificationOverride("");
+        applyResolution([]);
       }
-    } finally {
-      window.clearTimeout(requestTimeoutId);
-      requestAbortRef.current = null;
-      requestInFlightRef.current = false;
-      setSending(false);
-      setTimeout(() => timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: "smooth" }), 30);
     }
   };
 
@@ -647,6 +684,8 @@ export default function Home() {
         return;
       }
       rememberInterviewAnswers(pendingInterview.goal, briefQuestionList, briefAnswersNow, pendingInterview.intentFamily);
+      lastWorkGoalRef.current = pendingInterview.goal;
+      lastInterviewAnchorRef.current = pendingInterview.entryId;
       const answerLines = briefQuestionList.filter(question => isInterviewSlotFilled(briefAnswersNow[question.id])).map(question => `${question.label}: ${briefAnswersNow[question.id]}`);
       if (answerLines.length || notesNow) {
         const briefText = [
@@ -671,26 +710,36 @@ export default function Home() {
       setTimeout(() => timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: "smooth" }), 30);
       return;
     }
-    if (composerSend && !skipUserBubble) {
+    if (composerSend && !skipUserBubble && !bypassInterviewRef.current) {
       const plan = buildInterviewPlan(text, executionMode, locale, personalPack);
-      if (plan.needsModelInterview) {
+      if (plan.lane === "call_a_meta" || plan.needsModelInterview) {
         if (!provider) { setProvidersOpen(true); return; }
         const userEntry: Entry = { id: `user-${Date.now()}`, kind: "message", role: "user", text, time: t("justNow") };
+        lastInterviewAnchorRef.current = userEntry.id;
+        lastWorkGoalRef.current = text;
+        thinClarifyRetriesRef.current = 0;
         setEntries(prev => [...prev, userEntry]);
         setDraft(""); setSettledDraft(text); setInterviewAnswers({}); setInterviewFreeText({}); setClarificationOverride("");
         setTimeout(() => timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: "smooth" }), 30);
-        void requestModelInterview(userEntry.id, text, plan.questions, plan.intentFamily);
+        void requestModelInterview(userEntry.id, text, plan);
         return;
       }
-      if (shouldOfferPostSendInterview({ composerSend: true, alreadyPending: false, questionCount: plan.questions.length })) {
+      if (plan.lane === "local_interview" && shouldOfferPostSendInterview({ composerSend: true, alreadyPending: false, questionCount: plan.questions.length })) {
         const userEntry: Entry = { id: `user-${Date.now()}`, kind: "message", role: "user", text, time: t("justNow") };
+        lastInterviewAnchorRef.current = userEntry.id;
+        lastWorkGoalRef.current = text;
+        thinClarifyRetriesRef.current = 0;
         setEntries(prev => [...prev, userEntry]);
-        setPendingInterview({ entryId: userEntry.id, goal: text, questions: plan.questions, intentFamily: plan.intentFamily });
+        setPendingInterview({ entryId: userEntry.id, goal: text, questions: plan.questions, intentFamily: plan.intentFamily, gate: plan.gate, allowedSlotIds: plan.allowedSlotIds, allowPassthroughOnCallAFail: plan.allowPassthroughOnCallAFail });
         setDraft(""); setSettledDraft(text); setInterviewAnswers({}); setInterviewFreeText({}); setClarificationOverride("");
         setTimeout(() => timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: "smooth" }), 30);
         return;
       }
     }
+    const usePassthrough = passthroughGenerateRef.current;
+    bypassInterviewRef.current = false;
+    passthroughGenerateRef.current = false;
+    if (usePassthrough) skipUserBubble = true;
     requestInFlightRef.current = true;
     const userEntry: Entry = { id: `user-${Date.now()}`, kind: "message", role: "user", text, time: t("justNow") };
     if (!skipUserBubble) setEntries(prev => [...prev, userEntry]);
@@ -710,26 +759,35 @@ export default function Home() {
     const selectedAnswers = briefQuestionList.filter(question=>isInterviewSlotFilled(answersForPrompt[question.id])).map(question=>`${question.label}: ${answersForPrompt[question.id]}`);
     const interviewParts = [selectedAnswers.length ? `CLARIFICATION ANSWERS:\n${selectedAnswers.join("\n")}` : "", notesNow ? `USER NOTES:\n${notesNow}` : ""].filter(Boolean);
     const actionableRequest = isActionableGoal(text, executionMode) || interviewParts.length > 0;
-    const clarificationGate = `CLARIFICATION GATE: COMPLETE. Business slots were confirmed by the user. Do not invent additional business requirements. Do not ask another requirements interview in this response unless a NEW material fact is still UNKNOWN after the answers. Never ask the user to choose architecture, folder structure, source-code layout, libraries, frameworks, APIs, platforms, or tests. Do not finish by telling them to paste into Power Automate as if this app opened it. Select sensible technical defaults yourself, state them briefly, and proceed with the requested work. Never claim an action without tool evidence.\n${UNKNOWN_CONTENT_RULE}`;
+    const clarificationGate = `${DELIVERABLE_AFTER_BRIEF_RULE}\nBusiness slots were confirmed by the user when listed above. Do not invent side-effect requirements. Never ask the user to choose architecture, libraries, frameworks, APIs, platforms, or tests. Never claim an action without tool evidence.`;
     const interview = shouldMarkClarificationComplete(interviewParts.length)
       ? `\n\n${interviewParts.join("\n\n")}\n\n${clarificationGate}`
       : actionableRequest
-        ? `\n\n${UNKNOWN_CONTENT_RULE}`
+        ? `\n\n${UNKNOWN_CONTENT_RULE}\n${DELIVERABLE_AFTER_BRIEF_RULE}`
         : "";
+    if (actionableRequest || interviewParts.length) lastWorkGoalRef.current = text;
     const goalContract = createGoalContract({ objective: text, executionMode, hasFolder: Boolean(folderHandle), hasAttachments: attachments.length > 0, freeEligible: projectIntent.freeEligible, budgetMode: budgetTier });
     const route = routeForUser(goalContract);
     const contextPack = compileContextPack({ goal: goalContract, policy, attachmentTexts: attachments.filter(file=>file.text!==undefined).map(file=>file.text || ""), workspaceText: executionMode === "execute" ? safeWorkspace.text : "", replyContext });
-    const compactChatPolicy = actionableRequest
+    const compactChatPolicy = usePassthrough
       ? [
-          "MODE: DIRECT CHAT / ANALYSIS. Answer the user goal directly and concisely.",
+          PASSTHROUGH_GENERATE_RULE,
+          `OUTPUT: ${usagePlan.output}`,
+          `SOURCES: ${usagePlan.source}`,
+          `INFERENCE: ${usagePlan.inference}`,
+          `BUDGET: ${projectIntent.freeEligible ? "FREE_FIRST; never upgrade silently" : budgetTier}`,
+          requestCapability.level !== "supported" ? capabilityManifest : "",
+          safetyInstruction,
+        ].filter(Boolean).join("\n")
+      : actionableRequest
+      ? [
+          DELIVERABLE_AFTER_BRIEF_RULE,
           `OUTPUT: ${usagePlan.output}`,
           `SOURCES: ${usagePlan.source}`,
           `INFERENCE: ${usagePlan.inference}`,
           `BUDGET: ${projectIntent.freeEligible ? "FREE_FIRST; never upgrade silently" : budgetTier}`,
           "Never claim an external action or file change without tool evidence.",
           UNKNOWN_CONTENT_RULE,
-          "Never invent business facts or guess user intent. If a material slot is missing, ask clarifying questions only — do not generate a deliverable.",
-          "Ask only for missing business facts that materially change the answer (where to save, when to run). Clarifying questions must end with ? and list short options. Numbered HOWTO steps must not be a quiz. Never ask the user to choose architecture, libraries, APIs, platforms, source layout, or tests.",
           "If a folder action is needed, emit a uw-hands JSON fence with action run and intent workspace.list|workspace.read|workspace.patch|files.extract, then wait for confirm. desktop.rpa is unavailable: never claim Power Automate or Outlook was opened. Writing files is not running PAD.",
           requestCapability.level !== "supported" ? capabilityManifest : "",
           safetyInstruction,
@@ -773,7 +831,44 @@ export default function Home() {
     const promptForEstimate = messages.map(item => item.content).join("\n");
     fetch("/api/providers/chat", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider, apiKey, model: selectedModel, executionMode, stream: executionMode === "analyze", budgetMode: projectIntent.freeEligible ? "free-first" : budgetTier, attachments: binaryAttachments, maxOutputTokens: executionMode === "execute" ? 7000 : 1800, messages }) })
       .then(response => readProviderJson(response, provider, t, (partial, etaSeconds) => setEntries(prev => { const existing=prev.find(entry=>entry.id===streamingId); const live=estimateTurnUsage(promptForEstimate, partial); const liveTime = etaSeconds != null ? t("answeringEta", { seconds: etaSeconds }) : t("answering"); return existing?prev.map(entry=>entry.id===streamingId?{...entry,text:partial,time:liveTime,usage:live}:entry):[...prev,{id:streamingId,kind:"message",role:"ai",text:partial,time:liveTime,usage:live}]; })))
-      .then(data => { const usage = data.usage?.totalTokens ? data.usage : estimateTurnUsage(promptForEstimate, String(data.text || "")); if (executionMode === "execute") { try { const patch = parsePendingPatch(String(data.text)); setPendingPatch(patch); const receipt=createExecutionReceipt({status:"preview",model:data.selectedModel||selectedModel,context:contextPack,usage,changes:patch.files.map(file=>`${file.operation}: ${file.path}`),evidence:["Provider returned a validated patch preview", "No file has been written"]}); setEntries(prev => [...prev, { id: `patch-${Date.now()}`, kind: "result", title: t("filesAwaiting", { count: patch.files.length }), text: patch.summary || t("patchNotWritten"), time: t("justNow"), meta: t("previewPending"), usage, receipt, notice: resultNotice || undefined }]); } catch { throw new Error(t("invalidPatch")); } } else { const receipt=createExecutionReceipt({status:"completed",model:data.selectedModel||selectedModel,context:contextPack,usage}); setEntries(prev => prev.some(entry=>entry.id===streamingId)?prev.map(entry=>entry.id===streamingId?{...entry,text:data.text,time:t("justNow"),usage,receipt,notice:resultNotice||undefined}:entry):[...prev, { id: `ai-${Date.now()}`, kind: "message", role: "ai", text: data.text, time: t("justNow"), usage, receipt, notice: resultNotice || undefined }]); } })
+      .then(data => {
+        const usage = data.usage?.totalTokens ? data.usage : estimateTurnUsage(promptForEstimate, String(data.text || ""));
+        if (executionMode === "execute") {
+          try {
+            const patch = parsePendingPatch(String(data.text));
+            setPendingPatch(patch);
+            const receipt = createExecutionReceipt({ status: "preview", model: data.selectedModel || selectedModel, context: contextPack, usage, changes: patch.files.map(file => `${file.operation}: ${file.path}`), evidence: ["Provider returned a validated patch preview", "No file has been written"] });
+            setEntries(prev => [...prev, { id: `patch-${Date.now()}`, kind: "result", title: t("filesAwaiting", { count: patch.files.length }), text: patch.summary || t("patchNotWritten"), time: t("justNow"), meta: t("previewPending"), usage, receipt, notice: resultNotice || undefined }]);
+          } catch { throw new Error(t("invalidPatch")); }
+        } else {
+          const reply = String(data.text || "");
+          const thin = !usePassthrough && looksLikeInsufficientAnswer(reply) && thinClarifyRetriesRef.current < 2;
+          const notice = [resultNotice, thin ? t("thinAnswerNotice") : ""].filter(Boolean).join("\n\n") || undefined;
+          const receipt = createExecutionReceipt({ status: "completed", model: data.selectedModel || selectedModel, context: contextPack, usage });
+          const clarifyGoal = lastWorkGoalRef.current || text;
+          setEntries(prev => prev.some(entry => entry.id === streamingId)
+            ? prev.map(entry => entry.id === streamingId ? { ...entry, text: reply, time: t("justNow"), usage, receipt, notice, needsClarify: thin, clarifyGoal } : entry)
+            : [...prev, { id: `ai-${Date.now()}`, kind: "message", role: "ai", text: reply, time: t("justNow"), usage, receipt, notice, needsClarify: thin, clarifyGoal }]);
+          if (thin) {
+            thinClarifyRetriesRef.current += 1;
+            const anchor = lastInterviewAnchorRef.current || userEntry.id;
+            const gapQuestions = buildContextGapFollowUpQuestions(locale, clarifyGoal);
+            setPendingInterview({
+              entryId: anchor,
+              goal: clarifyGoal,
+              questions: gapQuestions,
+              gate: "soft",
+              allowedSlotIds: ["objective", "channel", "audience", "output_shape", "constraints"],
+            });
+            setInterviewAnswers({});
+            setInterviewFreeText({});
+            setClarificationOverride("");
+            setUploadError(t("thinAnswerNotice"));
+          } else {
+            thinClarifyRetriesRef.current = 0;
+          }
+        }
+      })
       .catch(error => {
         const abortReason = controller.signal.reason;
         const timedOut = (abortReason instanceof Error && abortReason.name === "TimeoutError") || (error instanceof Error && error.name === "TimeoutError");
@@ -950,7 +1045,7 @@ export default function Home() {
       <div className="timeline" id="timeline" ref={timelineRef}>
         {visibleEntries.map((e, i) => <div key={e.id} id={e.id} className={`entry ${e.kind} ${e.role || ""} ${flash === e.id ? "flash" : ""}`}>
           {e.kind === "message" ? <>
-            <div className="avatar">{e.role === "user" ? "HT" : "U"}</div><div className="message-body"><div className="message-head"><b>{e.role === "user" ? t("you") : "Userward"}</b><time>{e.time}</time></div><p>{e.role==="ai"?stripHandsFence(e.text):e.text}</p>{e.notice&&<p className="result-warning">{e.notice}</p>}{e.role==="user"&&pendingInterview?.entryId===e.id&&<div className="interview-card"><div className="interview-head"><span>?</span><div><b>{t("completeBriefHere")}</b><small>{t("interviewAfterSendHint")}</small></div><em>{Object.values(interviewFreeText).some(value=>value.trim())?t("customOptionReady"):`${pendingInterview.questions.filter(question=>isInterviewSlotFilled(effectiveInterviewAnswers(pendingInterview.questions, interviewAnswers, interviewFreeText)[question.id])).length}/${pendingInterview.questions.length}`}</em></div><div className="interview-table">{pendingInterview.questions.map((question,index)=>{const effective=effectiveInterviewAnswers(pendingInterview.questions, interviewAnswers, interviewFreeText);return <div className="interview-row" key={question.id}><span><b>{index+1}. {question.label}</b><small>{question.ask}</small></span><div className="choice-list">{question.options.map(option=>{const selected=question.multi?(interviewAnswers[question.id]||"").split(" · ").includes(option):interviewAnswers[question.id]===option && !(interviewFreeText[question.id]||"").trim();return <button type="button" className={selected?"selected":""} onClick={()=>setInterviewAnswers(prev=>{if(!question.multi)return {...prev,[question.id]:option};const current=(prev[question.id]||"").split(" · ").filter(Boolean);const next=current.includes(option)?current.filter(item=>item!==option):[...current,option];return {...prev,[question.id]:next.join(" · ")}})} key={option}><span className="tick-box">{selected?"✓":""}</span>{option}</button>})}<label className="per-question-describe"><span>{t("describePerQuestion")}</span><textarea value={interviewFreeText[question.id]||""} onChange={event=>setInterviewFreeText(prev=>({...prev,[question.id]:event.target.value}))} placeholder={t("describePerQuestionPlaceholder")}/></label>{effective[question.id]&&<small className="interview-note">{effective[question.id]}</small>}</div></div>})}</div><div className="inline-override"><label htmlFor="brief-override">{t("otherOption")}</label><textarea id="brief-override" value={clarificationOverride} onChange={event=>setClarificationOverride(event.target.value)} placeholder={t("otherOptionPlaceholder")}/><small>{t("userTextPriority")}</small></div><div className="interview-actions"><button type="button" className="primary" onClick={()=>sendMessage(false)} disabled={sending||!interviewSlotsComplete({ questions: pendingInterview.questions, answers: interviewAnswers, freeTexts: interviewFreeText })}>{t("sendBriefAnswers")}</button></div></div>}{e.role==="ai"&&(parseHandsBlock(e.text)||looksLikeHandGoal(e.text)||looksLikeHandGoal(visibleEntries.slice(0,i).reverse().find(item=>item.role==="user")?.text||""))&&<div className="hands-card"><div><b>{t("handTitle")}</b><span>{t("handHint")}</span></div><button type="button" className="primary" disabled={Boolean(handsBusy)} onClick={()=>dispatchLocalHand(e, visibleEntries.slice(0,i).reverse().find(item=>item.role==="user")?.text||e.text)}>{handsBusy===e.id?t("handWorking"):t("handRun")}</button></div>}{e.role==="ai"&&parseInlineQuestions(e.text, t).length>0&&<div className="inline-interview"><header><b>{t("replyHere")}</b><span>{t("replyHereHint")}</span></header>{parseInlineQuestions(e.text, t).map((question,index)=>{const value=inlineAnswers[e.id]?.[question.id]||"";return <div className="inline-question" key={question.id}><b>{index+1}. {question.ask}</b>{question.options.length>0?<div className="inline-choices">{question.options.map((option,optionIndex)=>{const selected=question.multi?value.split(" · ").includes(option):value===option;const suggested=optionIndex===0;return <button type="button" className={[selected?"selected":"",suggested?"suggested":""].filter(Boolean).join(" ")} key={option} onClick={()=>setInlineAnswers(prev=>{const current=prev[e.id]||{};if(!question.multi)return {...prev,[e.id]:{...current,[question.id]:option}};const chosen=(current[question.id]||"").split(" · ").filter(Boolean);const next=chosen.includes(option)?chosen.filter(item=>item!==option):[...chosen,option];return {...prev,[e.id]:{...current,[question.id]:next.join(" · ")}}})}><i>{selected?"✓":""}</i>{option}{suggested&&<em>{t("suggestedOption")}</em>}</button>})}</div>:<input value={value} onChange={event=>setInlineAnswers(prev=>({...prev,[e.id]:{...(prev[e.id]||{}),[question.id]:event.target.value}}))} placeholder={t("shortAnswerPlaceholder")}/>}</div>})}<button type="button" className="submit-inline" disabled={sending||!parseInlineQuestions(e.text, t).every(question=>inlineAnswers[e.id]?.[question.id]?.trim())} onClick={()=>submitInlineInterview(e,parseInlineQuestions(e.text, t))}>{t("sendTheseAnswers")}</button></div>}{e.receipt&&<ReceiptLine receipt={e.receipt} t={t} locale={locale}/>} {e.role==="ai"&&<div className="entry-feedback"><button type="button" onClick={()=>setCommentingEntry(commentingEntry===e.id?"":e.id)}>✎ {t("commentResult")}</button>{commentingEntry===e.id&&<div className="entry-comment-box"><textarea autoFocus value={entryComments[e.id]||""} onChange={event=>setEntryComments(prev=>({...prev,[e.id]:event.target.value}))} placeholder={t("commentPlaceholder")}/><div><button type="button" onClick={()=>setCommentingEntry("")}>{t("cancel")}</button><button type="button" className="submit-comment" disabled={sending||!(entryComments[e.id]||"").trim()} onClick={()=>submitEntryComment(e)}>{t("sendComment")}</button></div></div>}</div>}</div>
+            <div className="avatar">{e.role === "user" ? "HT" : "U"}</div><div className="message-body"><div className="message-head"><b>{e.role === "user" ? t("you") : "Userward"}</b><time>{e.time}</time></div><p>{e.role==="ai"?stripHandsFence(e.text):e.text}</p>{e.notice&&<p className="result-warning">{e.notice}</p>}{e.role==="ai"&&e.needsClarify&&!pendingInterview&&<div className="interview-actions"><button type="button" className="primary" onClick={()=>{const goal=e.clarifyGoal||lastWorkGoalRef.current;const anchor=lastInterviewAnchorRef.current;if(!goal||!anchor)return;setPendingInterview({entryId:anchor,goal,questions:buildContextGapFollowUpQuestions(locale,goal),gate:"soft",allowedSlotIds:["objective","channel","audience","output_shape","constraints"]});setInterviewAnswers({});setInterviewFreeText({});setClarificationOverride("");setUploadError(t("thinAnswerNotice"));setTimeout(()=>timelineRef.current?.scrollTo({top:timelineRef.current.scrollHeight,behavior:"smooth"}),30);}}>{t("continueClarifying")}</button></div>}{e.role==="user"&&pendingInterview?.entryId===e.id&&<div className="interview-card"><div className="interview-head"><span>?</span><div><b>{t("completeBriefHere")}</b><small>{t("interviewAfterSendHint")}</small></div><em>{Object.values(interviewFreeText).some(value=>value.trim())?t("customOptionReady"):`${pendingInterview.questions.filter(question=>isInterviewSlotFilled(effectiveInterviewAnswers(pendingInterview.questions, interviewAnswers, interviewFreeText)[question.id])).length}/${pendingInterview.questions.length}`}</em></div><div className="interview-table">{pendingInterview.questions.map((question,index)=>{const effective=effectiveInterviewAnswers(pendingInterview.questions, interviewAnswers, interviewFreeText);return <div className="interview-row" key={question.id}><span><b>{index+1}. {question.label}</b><small>{question.ask}</small></span><div className="choice-list">{question.options.map(option=>{const selected=question.multi?(interviewAnswers[question.id]||"").split(" · ").includes(option):interviewAnswers[question.id]===option && !(interviewFreeText[question.id]||"").trim();return <button type="button" className={selected?"selected":""} onClick={()=>setInterviewAnswers(prev=>{if(!question.multi)return {...prev,[question.id]:option};const current=(prev[question.id]||"").split(" · ").filter(Boolean);const next=current.includes(option)?current.filter(item=>item!==option):[...current,option];return {...prev,[question.id]:next.join(" · ")}})} key={option}><span className="tick-box">{selected?"✓":""}</span>{option}</button>})}<label className="per-question-describe"><span>{t("describePerQuestion")}</span><textarea value={interviewFreeText[question.id]||""} onChange={event=>setInterviewFreeText(prev=>({...prev,[question.id]:event.target.value}))} placeholder={t("describePerQuestionPlaceholder")}/></label>{effective[question.id]&&<small className="interview-note">{effective[question.id]}</small>}</div></div>})}</div><div className="inline-override"><label htmlFor="brief-override">{t("otherOption")}</label><textarea id="brief-override" value={clarificationOverride} onChange={event=>setClarificationOverride(event.target.value)} placeholder={t("otherOptionPlaceholder")}/><small>{t("userTextPriority")}</small></div><div className="interview-actions"><button type="button" className="primary" onClick={()=>sendMessage(false)} disabled={sending||!interviewSlotsComplete({ questions: pendingInterview.questions, answers: interviewAnswers, freeTexts: interviewFreeText })}>{t("sendBriefAnswers")}</button></div></div>}{e.role==="ai"&&(parseHandsBlock(e.text)||looksLikeHandGoal(e.text)||looksLikeHandGoal(visibleEntries.slice(0,i).reverse().find(item=>item.role==="user")?.text||""))&&<div className="hands-card"><div><b>{t("handTitle")}</b><span>{t("handHint")}</span></div><button type="button" className="primary" disabled={Boolean(handsBusy)} onClick={()=>dispatchLocalHand(e, visibleEntries.slice(0,i).reverse().find(item=>item.role==="user")?.text||e.text)}>{handsBusy===e.id?t("handWorking"):t("handRun")}</button></div>}{e.role==="ai"&&parseInlineQuestions(e.text, t).length>0&&<div className="inline-interview"><header><b>{t("replyHere")}</b><span>{t("replyHereHint")}</span></header>{parseInlineQuestions(e.text, t).map((question,index)=>{const value=inlineAnswers[e.id]?.[question.id]||"";return <div className="inline-question" key={question.id}><b>{index+1}. {question.ask}</b>{question.options.length>0?<div className="inline-choices">{question.options.map((option,optionIndex)=>{const selected=question.multi?value.split(" · ").includes(option):value===option;const suggested=optionIndex===0;return <button type="button" className={[selected?"selected":"",suggested?"suggested":""].filter(Boolean).join(" ")} key={option} onClick={()=>setInlineAnswers(prev=>{const current=prev[e.id]||{};if(!question.multi)return {...prev,[e.id]:{...current,[question.id]:option}};const chosen=(current[question.id]||"").split(" · ").filter(Boolean);const next=chosen.includes(option)?chosen.filter(item=>item!==option):[...chosen,option];return {...prev,[e.id]:{...current,[question.id]:next.join(" · ")}}})}><i>{selected?"✓":""}</i>{option}{suggested&&<em>{t("suggestedOption")}</em>}</button>})}</div>:<input value={value} onChange={event=>setInlineAnswers(prev=>({...prev,[e.id]:{...(prev[e.id]||{}),[question.id]:event.target.value}}))} placeholder={t("shortAnswerPlaceholder")}/>}</div>})}<button type="button" className="submit-inline" disabled={sending||!parseInlineQuestions(e.text, t).every(question=>inlineAnswers[e.id]?.[question.id]?.trim())} onClick={()=>submitInlineInterview(e,parseInlineQuestions(e.text, t))}>{t("sendTheseAnswers")}</button></div>}{e.receipt&&<ReceiptLine receipt={e.receipt} t={t} locale={locale}/>} {e.role==="ai"&&<div className="entry-feedback"><button type="button" onClick={()=>setCommentingEntry(commentingEntry===e.id?"":e.id)}>✎ {t("commentResult")}</button>{commentingEntry===e.id&&<div className="entry-comment-box"><textarea autoFocus value={entryComments[e.id]||""} onChange={event=>setEntryComments(prev=>({...prev,[e.id]:event.target.value}))} placeholder={t("commentPlaceholder")}/><div><button type="button" onClick={()=>setCommentingEntry("")}>{t("cancel")}</button><button type="button" className="submit-comment" disabled={sending||!(entryComments[e.id]||"").trim()} onClick={()=>submitEntryComment(e)}>{t("sendComment")}</button></div></div>}</div>}</div>
           </> : <><div className="rail"><span>{e.kind === "decision" ? "◆" : e.kind === "task" ? "✓" : e.kind === "file" ? "↗" : "●"}</span></div><div className="card"><div className="card-top"><div><small>{e.meta}</small><h3>{e.title}</h3></div><time>{e.time}</time></div><p>{e.text}</p>{e.notice&&<p className="result-warning">{e.notice}</p>}{e.kind === "task" && i === 9 && <div className="progress"><i/><span>{t("executing")}</span></div>}{e.receipt&&<ReceiptLine receipt={e.receipt} t={t} locale={locale}/>} {(["result","file","task"] as Kind[]).includes(e.kind)&&<div className="entry-feedback"><button type="button" onClick={()=>setCommentingEntry(commentingEntry===e.id?"":e.id)}>✎ {t("commentResult")}</button>{commentingEntry===e.id&&<div className="entry-comment-box"><textarea autoFocus value={entryComments[e.id]||""} onChange={event=>setEntryComments(prev=>({...prev,[e.id]:event.target.value}))} placeholder={t("commentPlaceholder")}/><div><button type="button" onClick={()=>setCommentingEntry("")}>{t("cancel")}</button><button type="button" className="submit-comment" disabled={sending||!(entryComments[e.id]||"").trim()} onClick={()=>submitEntryComment(e)}>{t("sendComment")}</button></div></div>}</div>}</div></>}
           {pendingPatch&&e.kind==="result"&&e.id.startsWith("patch-")&&<div className="inline-patch-approval"><div><b>{t("filesReady", { count: pendingPatch.files.length })}</b><span>{pendingPatch.files.map(file=>`${file.operation}: ${file.path}`).join(" · ")}</span></div><button type="button" onClick={()=>setPendingPatch(null)}>{t("cancel")}</button><button type="button" className="apply" onClick={applyPendingPatch}>{t("applyPatch")}</button></div>}
           {e.kind==="result"&&e.id.startsWith("folder-")&&<div className="inline-folder-actions"><button type="button" onClick={chooseFolder}>{t("changeFolder")}</button><button type="button" className="apply" onClick={()=>setExecutionMode("analyze")}>{t("normalChat")}</button></div>}
