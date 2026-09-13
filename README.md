@@ -11,12 +11,15 @@ The **Minimum Context Engine** and **User Interest Constitution** encode that st
 
 ## Clarify before generate
 
-Most assistants fill gaps silently. Userward treats unknown business facts as a hard stop for work products:
+Most assistants fill gaps silently. Userward treats unknown business facts as a hard stop when they change side effects or deliverable scope:
 
-1. **Detect work intent** — eight families (build, analyze, transform, compare, automate, write, decide, research), with domain packs for coding, data/Excel, and business ops.
-2. **Interview first** — short choice cards plus a free-text answer under each question.
-3. **Model interview only when local templates are thin** — that call may ask questions; it must not ship a tutorial, script, or “done” answer.
-4. **Generate only after slots are clear** — vague answers (“ok”, “no special requirement”) trigger follow-ups instead of a fake completion.
+1. **Route the case** — ordinary chat answers directly; work goals go through local packs first.
+2. **Hard gate** — automation, compare/reconcile, coding/data/ops: interview required slots (where/when/match/code target) before generate.
+3. **Soft gate** — research / write / open analysis: ask meta brief only (period, output, audience, constraints; for GTM/viral also objective + channel) — never quiz subject knowledge.
+4. **Call A (model interview) only when local packs are thin** — may add meta slots only; quiz-style questions are filtered out.
+5. **Passthrough last** — if local + Call A still cannot produce a usable brief on a soft gate, generate from the goal as written with labeled assumptions (still no invented destinations/schedules or fake side effects).
+6. **CLEAR follow-ups** — vague answers (“ok”, “no special requirement”) trigger follow-ups instead of a fake completion.
+7. **Deliver, don’t refuse** — after brief answers, the model must write a useful draft (assumptions labeled) or ask 1–2 more CLEAR questions. A thin “not enough data” reply reopens interview instead of ending the thread.
 
 ### Personal suggestions on this device
 
@@ -24,7 +27,7 @@ Optional **Remember choices on this device** stores answers you use often in a p
 
 - Nothing from this pack is sent to a Userward server.
 - It is not used to train a model.
-- You can turn it off or **Clear personal memory** anytime in Settings. Clearing all local data also removes it.
+- You can turn it off or **Clear saved suggestions** anytime in Settings. Clearing all local data also removes it.
 
 Ordinary chat still gets a direct answer. Folder writes still need your approval. An inspectable execution receipt can show what was measured versus assumed.
 
@@ -50,7 +53,8 @@ Early preview. Do not treat the app as a security boundary or use it for product
 
 Working capabilities:
 
-- Clarify-before-generate gate: missing business facts are asked, not invented.
+- Clarify-before-generate gate: missing business facts are asked, not invented; interview is to clear the brief, not to refuse the user.
+- Soft write/GTM briefs ask objective and channel; thin “not enough data” replies reopen clarifying questions.
 - Optional on-device personal suggestions for frequent interview answers (off/clear anytime; never uploaded or used for training).
 - Bring your own API key for OpenRouter, OpenAI, Anthropic, Google, DeepSeek, Qwen, or Kimi; or connect to local models through Ollama without an API key.
 - Searchable project/chat history stored in the browser.

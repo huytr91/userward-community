@@ -6,6 +6,8 @@ const root = process.cwd();
 const destination = join(root, "release", "userward-community-v0.1.0");
 const excluded = new Set([
   "BUSINESS REQUIREMENTS DOCUMENT v2.md",
+  "scripts/debug-ssr.mjs",
+  "scripts/debug-stream.mjs",
 ]);
 
 rmSync(destination, { recursive: true, force: true });
