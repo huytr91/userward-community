@@ -20,6 +20,7 @@ Most assistants fill gaps silently. Userward treats unknown business facts as a 
 5. **Passthrough last** — if local + Call A still cannot produce a usable brief on a soft gate, generate from the goal as written with labeled assumptions (still no invented destinations/schedules or fake side effects).
 6. **CLEAR follow-ups** — vague answers (“ok”, “no special requirement”) trigger follow-ups instead of a fake completion.
 7. **Deliver, don’t refuse** — after brief answers, the model must write a useful draft (assumptions labeled) or ask 1–2 more CLEAR questions. A thin “not enough data” reply reopens interview instead of ending the thread.
+8. **Clear Brief artifact** — confirmed slots become a versioned JSON brief you can inspect/copy before (and with) the generate receipt. Savings on the receipt compare packed context to a free-format baseline *inside this app*.
 
 ### Personal suggestions on this device
 
@@ -55,6 +56,8 @@ Working capabilities:
 
 - Clarify-before-generate gate: missing business facts are asked, not invented; interview is to clear the brief, not to refuse the user.
 - Soft write/GTM briefs ask objective and channel; thin “not enough data” replies reopen clarifying questions.
+- Inspectable **Clear Brief** JSON after interview (slots, source, confidence, gate) — audit what was confirmed before generate; copy/export from the timeline.
+- Execution receipt can show **estimated context savings** vs a free-format baseline in this app (not a ChatGPT/Claude UI comparison), alongside provider usage when available.
 - Optional on-device personal suggestions for frequent interview answers (off/clear anytime; never uploaded or used for training).
 - Bring your own API key for OpenRouter, OpenAI, Anthropic, Google, DeepSeek, Qwen, or Kimi; or connect to local models through Ollama without an API key.
 - Searchable project/chat history stored in the browser.
