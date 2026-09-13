@@ -116,6 +116,15 @@ export function compileContextPack(input: { goal: GoalContract; policy: string; 
   return { currentGoal: input.goal.objective, included, excluded: ["unselected project files", "unrelated conversation history", "superseded assumptions"], tokenEstimate: Math.ceil(payload.length / 4) };
 }
 
+export type ReceiptSavings = {
+  /** Estimated tokens of the packed prompt Userward actually sent. */
+  compactTokens: number;
+  /** Estimated tokens of the free-format baseline for the same goal/extras. */
+  freeTokens: number;
+  savedTokens: number;
+  savedPct: number;
+};
+
 export type ExecutionReceipt = {
   status: "completed" | "preview" | "failed";
   model: string;
@@ -124,9 +133,24 @@ export type ExecutionReceipt = {
   changes: string[];
   evidence: string[];
   usage?: { promptTokens: number; completionTokens: number; totalTokens: number; cost?: number };
+  /** Counterfactual vs free-format baseline (estimates). Prefer usage for billed tokens. */
+  savings?: ReceiptSavings;
+  /** Inspectable Clear Brief id when this run followed a clarify gate. */
+  briefId?: string;
+  briefSummary?: string;
 };
 
-export function createExecutionReceipt(input: { status: ExecutionReceipt["status"]; model: string; context: ContextPack; usage?: ExecutionReceipt["usage"]; changes?: string[]; evidence?: string[] }): ExecutionReceipt {
+export function createExecutionReceipt(input: {
+  status: ExecutionReceipt["status"];
+  model: string;
+  context: ContextPack;
+  usage?: ExecutionReceipt["usage"];
+  changes?: string[];
+  evidence?: string[];
+  savings?: ReceiptSavings;
+  briefId?: string;
+  briefSummary?: string;
+}): ExecutionReceipt {
   return {
     status: input.status,
     model: input.model,
@@ -135,5 +159,8 @@ export function createExecutionReceipt(input: { status: ExecutionReceipt["status
     changes: input.changes || [],
     evidence: input.evidence || (input.status === "completed" ? ["Provider returned final content"] : []),
     usage: input.usage,
+    ...(input.savings ? { savings: input.savings } : {}),
+    ...(input.briefId ? { briefId: input.briefId } : {}),
+    ...(input.briefSummary ? { briefSummary: input.briefSummary } : {}),
   };
 }
