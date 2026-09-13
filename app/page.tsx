@@ -8,6 +8,14 @@ import { buildRecentConversation, chunkText, estimateTurnUsage, parsePendingPatc
 import { inferModelCapability, type ModelCapability } from "./lib/model-capabilities";
 import { extractOfficeText, OFFICE_FILE, TEXT_FILE } from "./lib/file-extraction";
 import { buildInterviewOnlyPrompt, buildInterviewPlan, buildUnclearFollowUpQuestions, effectiveInterviewAnswers, interviewSlotsComplete, isActionableGoal, isInterviewSlotFilled, localFallbackInterviewQuestions, mergeInterviewQuestions, parseModelInterviewQuestions, shouldMarkClarificationComplete, shouldOfferPostSendInterview, unclearInterviewSlotIds, ORDINARY_CHAT_RULE, UNKNOWN_CONTENT_RULE, type InterviewQuestion } from "./lib/interview-pipeline";
+import {
+  clearPersonalPackInStorage,
+  emptyPersonalPack,
+  readPersonalPackFromStorage,
+  recordPersonalAnswer,
+  writePersonalPackToStorage,
+  type PersonalPackState,
+} from "./lib/personal-interview-pack";
 import { measureContextPackSavings, type PromptSavings } from "./lib/prompt-pack";
 import { policyResultWarning, openRouterPrivacyAssistantText } from "./lib/safety-experience";
 import { estimateStreamEtaSeconds, isOpenRouterPrivacyRestriction, PROVIDER_STREAMING_WALL_MS, providerRoundTripTimeoutMs, STREAM_IDLE_TIMEOUT_MS } from "./lib/provider-connect-errors";
@@ -22,7 +30,7 @@ type Attachment = { name: string; size: number; text?: string; dataUrl?: string;
 type LocalProject = { id: string; name: string; kind?: "chat" | "project"; folderName?: string; group?: "active" | "archive"; entries: Entry[] };
 type WorkspaceFile = { path: string; handle: FileSystemFileHandle };
 type PendingPatch = SafePendingPatch;
-type PendingInterview = { entryId: string; goal: string; questions: InterviewQuestion[] };
+type PendingInterview = { entryId: string; goal: string; questions: InterviewQuestion[]; intentFamily?: string | null };
 type CapabilityAssessment = { level: "supported" | "partial" | "unsupported"; title: string; canDo: string; cannotDo?: string; needs?: string };
 type ProductEdition = "personal" | "community";
 type FriendlyFailure = { title: string; message: string; action: string; meta: string };
@@ -295,6 +303,7 @@ export default function Home() {
   const [interviewAnswers, setInterviewAnswers] = useState<Record<string,string>>({});
   const [interviewFreeText, setInterviewFreeText] = useState<Record<string,string>>({});
   const [pendingInterview, setPendingInterview] = useState<PendingInterview | null>(null);
+  const [personalPack, setPersonalPack] = useState<PersonalPackState>(() => emptyPersonalPack(true));
   const [handsBusy, setHandsBusy] = useState("");
   const [clarificationOverride, setClarificationOverride] = useState("");
   const [safetyPurpose, setSafetyPurpose] = useState("");
@@ -391,7 +400,7 @@ export default function Home() {
     setSettledDraft(value);
   };
 
-  const interviewPlan = useMemo(() => buildInterviewPlan(settledDraft, executionMode, locale), [settledDraft, executionMode, locale]);
+  const interviewPlan = useMemo(() => buildInterviewPlan(settledDraft, executionMode, locale, personalPack), [settledDraft, executionMode, locale, personalPack]);
   const interviewQuestions = interviewPlan.questions;
   const usagePlan = useMemo(() => buildUsagePlan(settledDraft, t), [settledDraft, locale]);
   const projectIntent = useMemo(() => { const q=settledDraft.toLowerCase(); const active=Boolean(settledDraft.trim())&&(executionMode==="execute"||/(tạo|xây|làm|viết|sản xuất|phát triển).*(video|website|app|ứng dụng|phần mềm|script|code|dự án|automation|workflow|nghiên cứu|báo cáo)/.test(q)); const type=/video|clip|phim/.test(q)?t("typeVideo"):/code|script|website|app|phần mềm/.test(q)?t("typeSoftware"):/nghiên cứu|báo cáo|dữ liệu/.test(q)?t("typeResearch"):t("typeMultiStep"); const strategy=type===t("typeVideo")?t("strategyVideo"):type===t("typeSoftware")?t("strategySoftware"):t("strategyGeneral"); const expensive=/video|clip|phim|hình ảnh|audio|giọng nói|toàn bộ repo|production|pháp lý|tài chính|y tế|nghiên cứu chuyên sâu|nhiều phiên bản/.test(q); const explicitlySmall=/dự án nhỏ|app nhỏ|tool nhỏ|script ngắn|đơn giản|demo|prototype|thử nghiệm|một file|1 file/.test(q); const freeEligible=active&&explicitlySmall&&!expensive; return {active,type,strategy,freeEligible}; },[settledDraft,executionMode,locale]);
@@ -425,6 +434,7 @@ export default function Home() {
     const savedConnection = localStorage.getItem("minimum-provider-connection") || sessionStorage.getItem("minimum-provider-connection");
     const persisted = Boolean(localStorage.getItem("minimum-provider-connection"));
     if (savedConnection) { try { const saved = JSON.parse(savedConnection) as { provider?: string; model?: string; apiKey?: string }; if (saved.provider && saved.model && saved.apiKey) { queueMicrotask(() => { setProvider(saved.provider!); setCredentialProvider(saved.provider!); setModel(saved.model!); setApiKey(saved.apiKey!); setRememberKey(persisted); }); } } catch { localStorage.removeItem("minimum-provider-connection"); sessionStorage.removeItem("minimum-provider-connection"); } }
+    queueMicrotask(() => setPersonalPack(readPersonalPackFromStorage(localStorage)));
   }, []);
 
   useEffect(() => {
@@ -535,7 +545,7 @@ export default function Home() {
     setTimeout(() => setFlash(null), 2200);
   }
 
-  const requestModelInterview = async (entryId: string, goal: string, seed: InterviewQuestion[] = []) => {
+  const requestModelInterview = async (entryId: string, goal: string, seed: InterviewQuestion[] = [], intentFamily?: string | null) => {
     if (!provider) { setProvidersOpen(true); return; }
     if (requestInFlightRef.current) return;
     requestInFlightRef.current = true;
@@ -575,7 +585,7 @@ export default function Home() {
         const withoutPrep = prev.filter(entry => entry.id !== preparingId);
         return notice ? [...withoutPrep, { id: preparingId, kind: "message", role: "ai", text: notice, time: t("justNow") }] : withoutPrep;
       });
-      setPendingInterview({ entryId, goal, questions });
+      setPendingInterview({ entryId, goal, questions, intentFamily });
       setInterviewAnswers({});
       setInterviewFreeText({});
       setClarificationOverride("");
@@ -589,7 +599,7 @@ export default function Home() {
         setEntries(prev => prev.map(entry => entry.id === preparingId
           ? { ...entry, text: t("interviewModelFailed"), time: t("justNow") }
           : entry));
-        setPendingInterview({ entryId, goal, questions });
+        setPendingInterview({ entryId, goal, questions, intentFamily });
         setInterviewAnswers({});
         setInterviewFreeText({});
         setClarificationOverride("");
@@ -629,13 +639,14 @@ export default function Home() {
           freeTexts: interviewFreeText,
           locale,
         });
-        setPendingInterview({ entryId: pendingInterview.entryId, goal: pendingInterview.goal, questions: followUps.length ? followUps : briefQuestionList });
+        setPendingInterview({ entryId: pendingInterview.entryId, goal: pendingInterview.goal, questions: followUps.length ? followUps : briefQuestionList, intentFamily: pendingInterview.intentFamily });
         setInterviewAnswers({});
         setInterviewFreeText({});
         setUploadError(t("interviewUnclearFollowUp"));
         setTimeout(() => timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: "smooth" }), 30);
         return;
       }
+      rememberInterviewAnswers(pendingInterview.goal, briefQuestionList, briefAnswersNow, pendingInterview.intentFamily);
       const answerLines = briefQuestionList.filter(question => isInterviewSlotFilled(briefAnswersNow[question.id])).map(question => `${question.label}: ${briefAnswersNow[question.id]}`);
       if (answerLines.length || notesNow) {
         const briefText = [
@@ -661,20 +672,20 @@ export default function Home() {
       return;
     }
     if (composerSend && !skipUserBubble) {
-      const plan = buildInterviewPlan(text, executionMode, locale);
+      const plan = buildInterviewPlan(text, executionMode, locale, personalPack);
       if (plan.needsModelInterview) {
         if (!provider) { setProvidersOpen(true); return; }
         const userEntry: Entry = { id: `user-${Date.now()}`, kind: "message", role: "user", text, time: t("justNow") };
         setEntries(prev => [...prev, userEntry]);
         setDraft(""); setSettledDraft(text); setInterviewAnswers({}); setInterviewFreeText({}); setClarificationOverride("");
         setTimeout(() => timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: "smooth" }), 30);
-        void requestModelInterview(userEntry.id, text, plan.questions);
+        void requestModelInterview(userEntry.id, text, plan.questions, plan.intentFamily);
         return;
       }
       if (shouldOfferPostSendInterview({ composerSend: true, alreadyPending: false, questionCount: plan.questions.length })) {
         const userEntry: Entry = { id: `user-${Date.now()}`, kind: "message", role: "user", text, time: t("justNow") };
         setEntries(prev => [...prev, userEntry]);
-        setPendingInterview({ entryId: userEntry.id, goal: text, questions: plan.questions });
+        setPendingInterview({ entryId: userEntry.id, goal: text, questions: plan.questions, intentFamily: plan.intentFamily });
         setDraft(""); setSettledDraft(text); setInterviewAnswers({}); setInterviewFreeText({}); setClarificationOverride("");
         setTimeout(() => timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: "smooth" }), 30);
         return;
@@ -884,8 +895,42 @@ export default function Home() {
     if (!window.confirm(t("clearLocalConfirm"))) return;
     ["minimum-ui-locale", "minimum-projects", "minimum-provider-connection"].forEach(key=>localStorage.removeItem(key));
     sessionStorage.removeItem("minimum-provider-connection");
+    clearPersonalPackInStorage(localStorage);
+    setPersonalPack(emptyPersonalPack(false));
     await new Promise<void>((resolve) => { const request=indexedDB.deleteDatabase("minimum-workspace"); request.onsuccess=request.onerror=request.onblocked=()=>resolve(); });
     window.location.reload();
+  };
+
+  const setPersonalRememberEnabled = (enabled: boolean) => {
+    if (!enabled) {
+      clearPersonalPackInStorage(localStorage);
+      setPersonalPack(emptyPersonalPack(false));
+      return;
+    }
+    const next = { ...personalPack, enabled: true };
+    setPersonalPack(next);
+    writePersonalPackToStorage(localStorage, next);
+  };
+
+  const clearPersonalRemember = () => {
+    clearPersonalPackInStorage(localStorage);
+    setPersonalPack(emptyPersonalPack(false));
+    setUploadError(t("personalRememberCleared"));
+  };
+
+  const rememberInterviewAnswers = (_goal: string, questions: InterviewQuestion[], answers: Record<string, string>, intentFamily?: string | null) => {
+    setPersonalPack(prev => {
+      if (!prev.enabled) return prev;
+      const intent = intentFamily || "general";
+      let next = prev;
+      for (const question of questions) {
+        const value = answers[question.id];
+        if (!value) continue;
+        next = recordPersonalAnswer({ state: next, intent, slotId: question.id.replace(/^follow_/, ""), value });
+      }
+      if (next !== prev) writePersonalPackToStorage(localStorage, next);
+      return next;
+    });
   };
 
   return <main className="shell">
@@ -956,6 +1001,7 @@ export default function Home() {
       <header><div><small>{t("userwardLocal")}</small><h2>{t("settingsTitle")}</h2><p>{t("settingsLead")}</p></div><button type="button" onClick={()=>setSettingsOpen(false)} aria-label={t("closeSettings")}><Icon name="close"/></button></header>
       <div className="settings-body">
         <section><label>{t("localPrivacy")}</label><div className="security-status local-privacy"><b>✓ {t("noCloud")}</b><span>{t("bindLoopback")}</span><span>{t("historyOnDevice")}</span><span>{rememberKey&&provider?t("keyRemembered"):t("keySession")}</span><span>{t("dataLeavesOnCall")}</span><button type="button" className="clear-local-data" onClick={clearLocalData}>{t("clearLocal")}</button></div></section>
+        <section><label>{t("personalRememberTitle")}</label><div className="security-status local-privacy"><b>{personalPack.enabled ? `✓ ${t("personalRememberOn")}` : t("personalRememberOff")}</b><span>{t("personalRememberHint")}</span><div className="personal-remember-actions"><button type="button" className={personalPack.enabled?"primary":""} onClick={()=>setPersonalRememberEnabled(true)}>{t("personalRememberOn")}</button><button type="button" onClick={()=>setPersonalRememberEnabled(false)}>{t("personalRememberOff")}</button><button type="button" className="clear-local-data" onClick={clearPersonalRemember}>{t("personalRememberClear")}</button></div></div></section>
         <section><label>{t("userInterest")}</label><div className="security-status user-interest"><b>✓ {t("userInterestLead")}</b><span>{t("toolBeforeModel")}</span><span>{t("noSilentUpgrade")}</span><span>{t("noUnapprovedSideEffect")}</span><span>{t("noClaimWithoutEvidence")}</span></div></section>
         <section><label>{t("deviceProtection")}</label><div className="security-status"><b>✓ {t("localFirst")}</b><span>{rememberKey&&provider?t("keyRememberedShort"):t("keySessionShort")}</span><span>{t("secretsRedacted")}</span><span>{t("filesNeedConfirm")}</span>{lastRedactions>0&&<em>{t("redactedCount", { count: lastRedactions })}</em>}</div></section>
         <section><label>{t("workspaceFolder")}</label><button className="folder-connect" onClick={chooseFolder}>{folderHandle ? `✓ ${folderHandle.name}` : `＋ ${t("chooseFolderOnDevice")}`}</button>{workspaceError&&<p className="workspace-error">{workspaceError}</p>}<div className="workspace-files">{workspaceFiles.slice(0,40).map(file=><button key={file.path} className={selectedWorkspaceFile===file.path?"active":""} onClick={()=>openWorkspaceFile(file)}>↗ {file.path}</button>)}{folderHandle&&!workspaceFiles.length&&<small>{t("noSupportedFiles")}</small>}</div></section>

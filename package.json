@@ -15,7 +15,7 @@
     "build:community": "node scripts/build-community.mjs",
     "test": "npm run build:community && node --test tests/rendered-html.test.mjs && npm run test:wording && npm run test:contracts && npm run test:policy && npm run test:i18n && npm run test:userward-core && npm run test:local-only",
     "test:wording": "node --test tests/wording.test.mjs",
-    "test:contracts": "node --experimental-strip-types --test tests/chat-contract.test.ts tests/provider-chat-route.test.ts tests/provider-connect-errors.test.ts tests/interview-pipeline.test.ts tests/safety-experience.test.ts tests/prompt-pack.test.ts tests/send-guards.test.ts tests/inline-questions.test.ts tests/hands.test.ts",
+    "test:contracts": "node --experimental-strip-types --test tests/chat-contract.test.ts tests/provider-chat-route.test.ts tests/provider-connect-errors.test.ts tests/interview-pipeline.test.ts tests/interview-ontology.test.ts tests/safety-experience.test.ts tests/prompt-pack.test.ts tests/send-guards.test.ts tests/inline-questions.test.ts tests/hands.test.ts",
     "test:i18n": "node --experimental-strip-types --test tests/i18n.test.ts",
     "check:public": "node scripts/check-public.mjs",
     "release:check": "npm run check:public && npm test",
