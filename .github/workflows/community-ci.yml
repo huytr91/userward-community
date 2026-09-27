@@ -17,6 +17,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Lint
+        run: npm run lint
+        continue-on-error: true
       - run: npm run release:check
       - run: npx tsc --noEmit
       - run: npm audit --omit=dev --audit-level=high

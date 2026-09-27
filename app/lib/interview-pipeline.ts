@@ -260,10 +260,13 @@ export function isInterviewSlotFilled(answer: string | undefined): boolean {
   return !UNSPECIFIED_SLOT.test(value);
 }
 
-/** Filled but still too vague to proceed with work (CLEAR-lite). */
-export function isInterviewAnswerClear(answer: string | undefined): boolean {
+/** Filled but still too vague to proceed with work (CLEAR-lite).
+ * Exact matches of offered options are always clear — including Yes/No / Có/Không on binary slots.
+ */
+export function isInterviewAnswerClear(answer: string | undefined, options?: string[]): boolean {
   if (!isInterviewSlotFilled(answer)) return false;
   const value = (answer || "").trim();
+  if (options?.some(option => option.trim() === value)) return true;
   if (value.length < 3) return false;
   if (UNCLEAR_ANSWER.test(value)) return false;
   if (VAGUE_CHOICE.test(value)) return false;
@@ -302,7 +305,7 @@ export function unclearInterviewSlotIds(input: {
   freeTexts?: Record<string, string>;
 }): string[] {
   const effective = effectiveInterviewAnswers(input.questions, input.answers, input.freeTexts);
-  return input.questions.filter(question => isInterviewSlotFilled(effective[question.id]) && !isInterviewAnswerClear(effective[question.id])).map(question => question.id);
+  return input.questions.filter(question => isInterviewSlotFilled(effective[question.id]) && !isInterviewAnswerClear(effective[question.id], question.options)).map(question => question.id);
 }
 
 /** Build a follow-up card for slots that were answered but unclear. */
@@ -315,7 +318,7 @@ export function buildUnclearFollowUpQuestions(input: {
   const locale = input.locale || "en";
   const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
   const effective = effectiveInterviewAnswers(input.questions, input.answers, input.freeTexts);
-  const unclear = input.questions.filter(question => isInterviewSlotFilled(effective[question.id]) && !isInterviewAnswerClear(effective[question.id]));
+  const unclear = input.questions.filter(question => isInterviewSlotFilled(effective[question.id]) && !isInterviewAnswerClear(effective[question.id], question.options));
   return unclear.map(question => ({
     id: `follow_${question.id}`,
     label: question.label,

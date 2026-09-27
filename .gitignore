@@ -17,6 +17,7 @@
 /.next/
 /.vinext/
 /out/
+/benchmarks/out/
 
 # misc
 .DS_Store

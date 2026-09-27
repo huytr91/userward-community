@@ -17,7 +17,17 @@ import {
   type PersonalPackState,
 } from "./lib/personal-interview-pack";
 import { measureContextPackSavings, type PromptSavings } from "./lib/prompt-pack";
-import { buildClearBrief, serializeClearBrief, summarizeClearBrief, type ClearBrief } from "./lib/clear-brief";
+import {
+  buildClearBrief,
+  confirmClearBrief,
+  formatClearBriefForPrompt,
+  serializeClearBrief,
+  summarizeClearBrief,
+  updateClearBriefAssumptions,
+  updateClearBriefSlot,
+  validateClearBriefForGenerate,
+  type ClearBrief,
+} from "./lib/clear-brief";
 import { policyResultWarning, openRouterPrivacyAssistantText } from "./lib/safety-experience";
 import { estimateStreamEtaSeconds, isOpenRouterPrivacyRestriction, PROVIDER_STREAMING_WALL_MS, providerRoundTripTimeoutMs, STREAM_IDLE_TIMEOUT_MS } from "./lib/provider-connect-errors";
 import { parseInlineQuestions, type InlineQuestion } from "./lib/inline-questions";
@@ -39,6 +49,13 @@ type PendingInterview = {
   gate?: InterviewPlan["gate"];
   allowedSlotIds?: string[];
   allowPassthroughOnCallAFail?: boolean;
+};
+type PendingClearBrief = {
+  entryId: string;
+  briefEntryId: string;
+  questions: InterviewQuestion[];
+  brief: ClearBrief;
+  allowedSlotIds?: string[];
 };
 type CapabilityAssessment = { level: "supported" | "partial" | "unsupported"; title: string; canDo: string; cannotDo?: string; needs?: string };
 type ProductEdition = "personal" | "community";
@@ -320,6 +337,7 @@ export default function Home() {
   const [interviewAnswers, setInterviewAnswers] = useState<Record<string,string>>({});
   const [interviewFreeText, setInterviewFreeText] = useState<Record<string,string>>({});
   const [pendingInterview, setPendingInterview] = useState<PendingInterview | null>(null);
+  const [pendingClearBrief, setPendingClearBrief] = useState<PendingClearBrief | null>(null);
   const [personalPack, setPersonalPack] = useState<PersonalPackState>(() => emptyPersonalPack(true));
   const [handsBusy, setHandsBusy] = useState("");
   const [clarificationOverride, setClarificationOverride] = useState("");
@@ -409,6 +427,7 @@ export default function Home() {
       setWorkspaceFileText("");
       setPendingPatch(null);
       setPendingInterview(null);
+      setPendingClearBrief(null);
       setInterviewAnswers({});
       setInterviewFreeText({});
       setClarificationOverride("");
@@ -483,7 +502,7 @@ export default function Home() {
     if (handle) folderHandlesRef.current[id]=handle;
     const permission = handle ? await (handle as any).queryPermission?.({mode:"readwrite"}).catch(()=>"prompt") : "denied";
     const available = permission === "granted" ? handle : null;
-    setActiveProjectId(id); setEntries(next.entries); setFolderHandle(available); setWorkspaceFiles([]); setSelectedWorkspaceFile(""); setWorkspaceFileText(""); setPendingPatch(null); setPendingInterview(null); setInterviewAnswers({}); setInterviewFreeText({}); setClarificationOverride(""); setExecutionMode(available ? "execute" : "analyze");
+    setActiveProjectId(id); setEntries(next.entries); setFolderHandle(available); setWorkspaceFiles([]); setSelectedWorkspaceFile(""); setWorkspaceFileText(""); setPendingPatch(null); setPendingInterview(null); setPendingClearBrief(null); setInterviewAnswers({}); setInterviewFreeText({}); setClarificationOverride(""); setExecutionMode(available ? "execute" : "analyze");
     if (available) await scanFolder(available);
     else if (handle) setWorkspaceError(t("folderRemembered", { name: handle.name }));
   };
@@ -491,13 +510,13 @@ export default function Home() {
   const createProject = () => {
     const name = newProjectName.trim(); if (!name) return;
     const project: LocalProject = { id: `project-${Date.now()}`, name, kind: "project", entries: [] };
-    setProjectList(prev => [...prev, project]); setActiveProjectId(project.id); setEntries([]); setNewProjectName(""); setNewProjectOpen(false); setPendingInterview(null); setInterviewAnswers({}); setInterviewFreeText({}); setClarificationOverride("");
+    setProjectList(prev => [...prev, project]); setActiveProjectId(project.id); setEntries([]); setNewProjectName(""); setNewProjectOpen(false); setPendingInterview(null); setPendingClearBrief(null); setInterviewAnswers({}); setInterviewFreeText({}); setClarificationOverride("");
   };
 
   const createChat = () => {
     const now = new Date();
     const chat: LocalProject = { id: `chat-${Date.now()}`, name: `Chat ${now.toLocaleTimeString(numberLocale, { hour: "2-digit", minute: "2-digit" })}`, kind: "chat", entries: [] };
-    setProjectList(prev => [...prev, chat]); setActiveProjectId(chat.id); setEntries([]); setFolderHandle(null); setWorkspaceFiles([]); setSelectedWorkspaceFile(""); setWorkspaceFileText(""); setPendingPatch(null); setPendingInterview(null); setInterviewAnswers({}); setInterviewFreeText({}); setClarificationOverride(""); setExecutionMode("analyze");
+    setProjectList(prev => [...prev, chat]); setActiveProjectId(chat.id); setEntries([]); setFolderHandle(null); setWorkspaceFiles([]); setSelectedWorkspaceFile(""); setWorkspaceFileText(""); setPendingPatch(null); setPendingInterview(null); setPendingClearBrief(null); setInterviewAnswers({}); setInterviewFreeText({}); setClarificationOverride(""); setExecutionMode("analyze");
     setTimeout(()=>document.querySelector<HTMLTextAreaElement>('.composer textarea')?.focus(),20);
   };
 
@@ -668,7 +687,24 @@ export default function Home() {
     let briefAnswersNow: Record<string, string> = {};
     let briefQuestionList = interviewQuestions;
     let runBrief: ClearBrief | null = null;
-    if (composerSend && pendingInterview) {
+    if (composerSend && pendingClearBrief) {
+      const check = validateClearBriefForGenerate(pendingClearBrief.brief);
+      if (!check.ok) {
+        setUploadError(t("clearBriefHardMissing", { slots: check.missing.join(", ") || "—" }));
+        setTimeout(() => timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: "smooth" }), 30);
+        return;
+      }
+      runBrief = confirmClearBrief(pendingClearBrief.brief);
+      lastClearBriefRef.current = runBrief;
+      text = runBrief.goal;
+      notesNow = runBrief.notes || "";
+      briefQuestionList = pendingClearBrief.questions;
+      briefAnswersNow = Object.fromEntries(runBrief.slots.map(slot => [slot.id, slot.value]));
+      setEntries(prev => prev.map(entry => entry.id === pendingClearBrief.briefEntryId ? { ...entry, brief: runBrief || undefined, meta: t("clearBriefConfirmedMeta") } : entry));
+      setPendingClearBrief(null);
+      skipUserBubble = true;
+      setUploadError("");
+    } else if (composerSend && pendingInterview) {
       text = pendingInterview.goal;
       briefQuestionList = pendingInterview.questions;
       briefAnswersNow = effectiveInterviewAnswers(briefQuestionList, interviewAnswers, interviewFreeText);
@@ -686,7 +722,7 @@ export default function Home() {
           freeTexts: interviewFreeText,
           locale,
         });
-        setPendingInterview({ entryId: pendingInterview.entryId, goal: pendingInterview.goal, questions: followUps.length ? followUps : briefQuestionList, intentFamily: pendingInterview.intentFamily });
+        setPendingInterview({ entryId: pendingInterview.entryId, goal: pendingInterview.goal, questions: followUps.length ? followUps : briefQuestionList, intentFamily: pendingInterview.intentFamily, gate: pendingInterview.gate, allowedSlotIds: pendingInterview.allowedSlotIds });
         setInterviewAnswers({});
         setInterviewFreeText({});
         setUploadError(t("interviewUnclearFollowUp"));
@@ -696,27 +732,38 @@ export default function Home() {
       rememberInterviewAnswers(pendingInterview.goal, briefQuestionList, briefAnswersNow, pendingInterview.intentFamily);
       lastWorkGoalRef.current = pendingInterview.goal;
       lastInterviewAnchorRef.current = pendingInterview.entryId;
-      runBrief = buildClearBrief({
+      const draftBrief = buildClearBrief({
         goal: pendingInterview.goal,
         questions: briefQuestionList,
         answers: briefAnswersNow,
         notes: notesNow,
         gate: pendingInterview.gate,
         intentFamily: pendingInterview.intentFamily,
+        lane: "local_interview",
+        allowedSlotIds: pendingInterview.allowedSlotIds,
         personalPack,
+        status: "draft",
       });
-      lastClearBriefRef.current = runBrief;
+      lastClearBriefRef.current = draftBrief;
       const answerLines = briefQuestionList.filter(question => isInterviewSlotFilled(briefAnswersNow[question.id])).map(question => `${question.label}: ${briefAnswersNow[question.id]}`);
-      if (answerLines.length || notesNow) {
-        const briefText = [
-          answerLines.length ? `${t("interviewAnswersHeader")}\n${answerLines.join("\n")}` : "",
-          notesNow ? `${t("otherOption")}:\n${notesNow}` : "",
-        ].filter(Boolean).join("\n\n");
-        setEntries(prev => [...prev, { id: `user-${Date.now()}`, kind: "message", role: "user", text: briefText, time: t("justNow"), brief: runBrief || undefined, meta: t("clearBriefMeta") }]);
-      }
-      skipUserBubble = true;
+      const briefEntryId = `user-${Date.now()}`;
+      const briefText = [
+        answerLines.length ? `${t("interviewAnswersHeader")}\n${answerLines.join("\n")}` : "",
+        notesNow ? `${t("otherOption")}:\n${notesNow}` : "",
+        t("clearBriefReviewHint"),
+      ].filter(Boolean).join("\n\n");
+      setEntries(prev => [...prev, { id: briefEntryId, kind: "message", role: "user", text: briefText, time: t("justNow"), brief: draftBrief, meta: t("clearBriefMeta") }]);
+      setPendingClearBrief({
+        entryId: pendingInterview.entryId,
+        briefEntryId,
+        questions: briefQuestionList,
+        brief: draftBrief,
+        allowedSlotIds: pendingInterview.allowedSlotIds,
+      });
       setPendingInterview(null);
       setUploadError("");
+      setTimeout(() => timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: "smooth" }), 30);
+      return;
     }
     const requestLegal = assessLegalRisk(text);
     const requestCapability = assessCapabilities(text, executionMode, Boolean(folderHandle), t);
@@ -726,7 +773,7 @@ export default function Home() {
       const folderEntry: Entry = { id: `folder-${Date.now()}`, kind: "result", title: t("missingFolderTitle"), text: `${t("missingFolderMessage")} ${t("missingFolderAction")}`, time: t("justNow"), meta: t("missingFolderMeta") };
       setEntries(prev => [...prev, userEntry, folderEntry]);
       setUploadError(""); setWorkspaceError(t("connectFolderBeforeEdit"));
-      setSending(false); requestInFlightRef.current = false; setPendingInterview(null);
+      setSending(false); requestInFlightRef.current = false; setPendingInterview(null); setPendingClearBrief(null);
       setTimeout(() => timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: "smooth" }), 30);
       return;
     }
@@ -760,6 +807,17 @@ export default function Home() {
     bypassInterviewRef.current = false;
     passthroughGenerateRef.current = false;
     if (usePassthrough) skipUserBubble = true;
+    if (usePassthrough && !runBrief) {
+      runBrief = confirmClearBrief(buildClearBrief({
+        goal: text,
+        questions: [],
+        answers: {},
+        gate: "soft",
+        lane: "passthrough",
+        status: "draft",
+      }));
+      lastClearBriefRef.current = runBrief;
+    }
     requestInFlightRef.current = true;
     const userEntry: Entry = { id: `user-${Date.now()}`, kind: "message", role: "user", text, time: t("justNow") };
     if (!skipUserBubble) setEntries(prev => [...prev, userEntry]);
@@ -778,10 +836,10 @@ export default function Home() {
     const answersForPrompt = Object.keys(briefAnswersNow).length ? briefAnswersNow : effectiveInterviewAnswers(briefQuestionList, interviewAnswers, interviewFreeText);
     const selectedAnswers = briefQuestionList.filter(question=>isInterviewSlotFilled(answersForPrompt[question.id])).map(question=>`${question.label}: ${answersForPrompt[question.id]}`);
     const interviewParts = [selectedAnswers.length ? `CLARIFICATION ANSWERS:\n${selectedAnswers.join("\n")}` : "", notesNow ? `USER NOTES:\n${notesNow}` : ""].filter(Boolean);
-    const actionableRequest = isActionableGoal(text, executionMode) || interviewParts.length > 0;
+    const actionableRequest = isActionableGoal(text, executionMode) || interviewParts.length > 0 || Boolean(runBrief);
     const clarificationGate = `${DELIVERABLE_AFTER_BRIEF_RULE}\nBusiness slots were confirmed by the user when listed above. Do not invent side-effect requirements. Never ask the user to choose architecture, libraries, frameworks, APIs, platforms, or tests. Never claim an action without tool evidence.`;
-    const interview = shouldMarkClarificationComplete(interviewParts.length)
-      ? `\n\n${interviewParts.join("\n\n")}\n\n${clarificationGate}`
+    const interview = shouldMarkClarificationComplete(interviewParts.length) || runBrief
+      ? `\n\n${[...interviewParts, runBrief ? formatClearBriefForPrompt(runBrief) : ""].filter(Boolean).join("\n\n")}\n\n${clarificationGate}`
       : actionableRequest
         ? `\n\n${UNKNOWN_CONTENT_RULE}\n${DELIVERABLE_AFTER_BRIEF_RULE}`
         : "";
@@ -1065,7 +1123,7 @@ export default function Home() {
       <div className="timeline" id="timeline" ref={timelineRef}>
         {visibleEntries.map((e, i) => <div key={e.id} id={e.id} className={`entry ${e.kind} ${e.role || ""} ${flash === e.id ? "flash" : ""}`}>
           {e.kind === "message" ? <>
-            <div className="avatar">{e.role === "user" ? "HT" : "U"}</div><div className="message-body"><div className="message-head"><b>{e.role === "user" ? t("you") : "Userward"}</b><time>{e.time}</time></div><p>{e.role==="ai"?stripHandsFence(e.text):e.text}</p>{e.brief&&<details className="clear-brief-card"><summary>{t("clearBriefInspect")}</summary><pre>{serializeClearBrief(e.brief)}</pre><button type="button" onClick={()=>{void navigator.clipboard?.writeText(serializeClearBrief(e.brief!));}}>{t("clearBriefCopy")}</button></details>}{e.notice&&<p className="result-warning">{e.notice}</p>}{e.role==="ai"&&e.needsClarify&&!pendingInterview&&<div className="interview-actions"><button type="button" className="primary" onClick={()=>{const goal=e.clarifyGoal||lastWorkGoalRef.current;const anchor=lastInterviewAnchorRef.current;if(!goal||!anchor)return;setPendingInterview({entryId:anchor,goal,questions:buildContextGapFollowUpQuestions(locale,goal),gate:"soft",allowedSlotIds:["objective","channel","audience","output_shape","constraints"]});setInterviewAnswers({});setInterviewFreeText({});setClarificationOverride("");setUploadError(t("thinAnswerNotice"));setTimeout(()=>timelineRef.current?.scrollTo({top:timelineRef.current.scrollHeight,behavior:"smooth"}),30);}}>{t("continueClarifying")}</button></div>}{e.role==="user"&&pendingInterview?.entryId===e.id&&<div className="interview-card"><div className="interview-head"><span>?</span><div><b>{t("completeBriefHere")}</b><small>{t("interviewAfterSendHint")}</small></div><em>{Object.values(interviewFreeText).some(value=>value.trim())?t("customOptionReady"):`${pendingInterview.questions.filter(question=>isInterviewSlotFilled(effectiveInterviewAnswers(pendingInterview.questions, interviewAnswers, interviewFreeText)[question.id])).length}/${pendingInterview.questions.length}`}</em></div><div className="interview-table">{pendingInterview.questions.map((question,index)=>{const effective=effectiveInterviewAnswers(pendingInterview.questions, interviewAnswers, interviewFreeText);return <div className="interview-row" key={question.id}><span><b>{index+1}. {question.label}</b><small>{question.ask}</small></span><div className="choice-list">{question.options.map(option=>{const selected=question.multi?(interviewAnswers[question.id]||"").split(" · ").includes(option):interviewAnswers[question.id]===option && !(interviewFreeText[question.id]||"").trim();return <button type="button" className={selected?"selected":""} onClick={()=>setInterviewAnswers(prev=>{if(!question.multi)return {...prev,[question.id]:option};const current=(prev[question.id]||"").split(" · ").filter(Boolean);const next=current.includes(option)?current.filter(item=>item!==option):[...current,option];return {...prev,[question.id]:next.join(" · ")}})} key={option}><span className="tick-box">{selected?"✓":""}</span>{option}</button>})}<label className="per-question-describe"><span>{t("describePerQuestion")}</span><textarea value={interviewFreeText[question.id]||""} onChange={event=>setInterviewFreeText(prev=>({...prev,[question.id]:event.target.value}))} placeholder={t("describePerQuestionPlaceholder")}/></label>{effective[question.id]&&<small className="interview-note">{effective[question.id]}</small>}</div></div>})}</div><div className="inline-override"><label htmlFor="brief-override">{t("otherOption")}</label><textarea id="brief-override" value={clarificationOverride} onChange={event=>setClarificationOverride(event.target.value)} placeholder={t("otherOptionPlaceholder")}/><small>{t("userTextPriority")}</small></div><div className="interview-actions"><button type="button" className="primary" onClick={()=>sendMessage(false)} disabled={sending||!interviewSlotsComplete({ questions: pendingInterview.questions, answers: interviewAnswers, freeTexts: interviewFreeText })}>{t("sendBriefAnswers")}</button></div></div>}{e.role==="ai"&&(parseHandsBlock(e.text)||looksLikeHandGoal(e.text)||looksLikeHandGoal(visibleEntries.slice(0,i).reverse().find(item=>item.role==="user")?.text||""))&&<div className="hands-card"><div><b>{t("handTitle")}</b><span>{t("handHint")}</span></div><button type="button" className="primary" disabled={Boolean(handsBusy)} onClick={()=>dispatchLocalHand(e, visibleEntries.slice(0,i).reverse().find(item=>item.role==="user")?.text||e.text)}>{handsBusy===e.id?t("handWorking"):t("handRun")}</button></div>}{e.role==="ai"&&parseInlineQuestions(e.text, t).length>0&&<div className="inline-interview"><header><b>{t("replyHere")}</b><span>{t("replyHereHint")}</span></header>{parseInlineQuestions(e.text, t).map((question,index)=>{const value=inlineAnswers[e.id]?.[question.id]||"";return <div className="inline-question" key={question.id}><b>{index+1}. {question.ask}</b>{question.options.length>0?<div className="inline-choices">{question.options.map((option,optionIndex)=>{const selected=question.multi?value.split(" · ").includes(option):value===option;const suggested=optionIndex===0;return <button type="button" className={[selected?"selected":"",suggested?"suggested":""].filter(Boolean).join(" ")} key={option} onClick={()=>setInlineAnswers(prev=>{const current=prev[e.id]||{};if(!question.multi)return {...prev,[e.id]:{...current,[question.id]:option}};const chosen=(current[question.id]||"").split(" · ").filter(Boolean);const next=chosen.includes(option)?chosen.filter(item=>item!==option):[...chosen,option];return {...prev,[e.id]:{...current,[question.id]:next.join(" · ")}}})}><i>{selected?"✓":""}</i>{option}{suggested&&<em>{t("suggestedOption")}</em>}</button>})}</div>:<input value={value} onChange={event=>setInlineAnswers(prev=>({...prev,[e.id]:{...(prev[e.id]||{}),[question.id]:event.target.value}}))} placeholder={t("shortAnswerPlaceholder")}/>}</div>})}<button type="button" className="submit-inline" disabled={sending||!parseInlineQuestions(e.text, t).every(question=>inlineAnswers[e.id]?.[question.id]?.trim())} onClick={()=>submitInlineInterview(e,parseInlineQuestions(e.text, t))}>{t("sendTheseAnswers")}</button></div>}{e.receipt&&<ReceiptLine receipt={e.receipt} t={t} locale={locale}/>} {e.role==="ai"&&<div className="entry-feedback"><button type="button" onClick={()=>setCommentingEntry(commentingEntry===e.id?"":e.id)}>✎ {t("commentResult")}</button>{commentingEntry===e.id&&<div className="entry-comment-box"><textarea autoFocus value={entryComments[e.id]||""} onChange={event=>setEntryComments(prev=>({...prev,[e.id]:event.target.value}))} placeholder={t("commentPlaceholder")}/><div><button type="button" onClick={()=>setCommentingEntry("")}>{t("cancel")}</button><button type="button" className="submit-comment" disabled={sending||!(entryComments[e.id]||"").trim()} onClick={()=>submitEntryComment(e)}>{t("sendComment")}</button></div></div>}</div>}</div>
+            <div className="avatar">{e.role === "user" ? "HT" : "U"}</div><div className="message-body"><div className="message-head"><b>{e.role === "user" ? t("you") : "Userward"}</b><time>{e.time}</time></div><p>{e.role==="ai"?stripHandsFence(e.text):e.text}</p>{e.brief&&<details className="clear-brief-card"><summary>{t("clearBriefInspect")}</summary><pre>{serializeClearBrief(e.brief)}</pre><button type="button" onClick={()=>{void navigator.clipboard?.writeText(serializeClearBrief(e.brief!));}}>{t("clearBriefCopy")}</button></details>}{e.notice&&<p className="result-warning">{e.notice}</p>}{e.role==="ai"&&e.needsClarify&&!pendingInterview&&<div className="interview-actions"><button type="button" className="primary" onClick={()=>{const goal=e.clarifyGoal||lastWorkGoalRef.current;const anchor=lastInterviewAnchorRef.current;if(!goal||!anchor)return;setPendingInterview({entryId:anchor,goal,questions:buildContextGapFollowUpQuestions(locale,goal),gate:"soft",allowedSlotIds:["objective","channel","audience","output_shape","constraints"]});setInterviewAnswers({});setInterviewFreeText({});setClarificationOverride("");setUploadError(t("thinAnswerNotice"));setTimeout(()=>timelineRef.current?.scrollTo({top:timelineRef.current.scrollHeight,behavior:"smooth"}),30);}}>{t("continueClarifying")}</button></div>}{e.role==="user"&&pendingInterview?.entryId===e.id&&<div className="interview-card"><div className="interview-head"><span>?</span><div><b>{t("completeBriefHere")}</b><small>{t("interviewAfterSendHint")}</small></div><em>{Object.values(interviewFreeText).some(value=>value.trim())?t("customOptionReady"):`${pendingInterview.questions.filter(question=>isInterviewSlotFilled(effectiveInterviewAnswers(pendingInterview.questions, interviewAnswers, interviewFreeText)[question.id])).length}/${pendingInterview.questions.length}`}</em></div><div className="interview-table">{pendingInterview.questions.map((question,index)=>{const effective=effectiveInterviewAnswers(pendingInterview.questions, interviewAnswers, interviewFreeText);return <div className="interview-row" key={question.id}><span><b>{index+1}. {question.label}</b><small>{question.ask}</small></span><div className="choice-list">{question.options.map(option=>{const selected=question.multi?(interviewAnswers[question.id]||"").split(" · ").includes(option):interviewAnswers[question.id]===option && !(interviewFreeText[question.id]||"").trim();return <button type="button" className={selected?"selected":""} onClick={()=>setInterviewAnswers(prev=>{if(!question.multi)return {...prev,[question.id]:option};const current=(prev[question.id]||"").split(" · ").filter(Boolean);const next=current.includes(option)?current.filter(item=>item!==option):[...current,option];return {...prev,[question.id]:next.join(" · ")}})} key={option}><span className="tick-box">{selected?"✓":""}</span>{option}</button>})}<label className="per-question-describe"><span>{t("describePerQuestion")}</span><textarea value={interviewFreeText[question.id]||""} onChange={event=>setInterviewFreeText(prev=>({...prev,[question.id]:event.target.value}))} placeholder={t("describePerQuestionPlaceholder")}/></label>{effective[question.id]&&<small className="interview-note">{effective[question.id]}</small>}</div></div>})}</div><div className="inline-override"><label htmlFor="brief-override">{t("otherOption")}</label><textarea id="brief-override" value={clarificationOverride} onChange={event=>setClarificationOverride(event.target.value)} placeholder={t("otherOptionPlaceholder")}/><small>{t("userTextPriority")}</small></div><div className="interview-actions"><button type="button" className="primary" onClick={()=>sendMessage(false)} disabled={sending||!interviewSlotsComplete({ questions: pendingInterview.questions, answers: interviewAnswers, freeTexts: interviewFreeText })}>{t("reviewClearBrief")}</button></div></div>}{e.role==="ai"&&(parseHandsBlock(e.text)||looksLikeHandGoal(e.text)||looksLikeHandGoal(visibleEntries.slice(0,i).reverse().find(item=>item.role==="user")?.text||""))&&<div className="hands-card"><div><b>{t("handTitle")}</b><span>{t("handHint")}</span></div><button type="button" className="primary" disabled={Boolean(handsBusy)} onClick={()=>dispatchLocalHand(e, visibleEntries.slice(0,i).reverse().find(item=>item.role==="user")?.text||e.text)}>{handsBusy===e.id?t("handWorking"):t("handRun")}</button></div>}{e.role==="ai"&&parseInlineQuestions(e.text, t).length>0&&<div className="inline-interview"><header><b>{t("replyHere")}</b><span>{t("replyHereHint")}</span></header>{parseInlineQuestions(e.text, t).map((question,index)=>{const value=inlineAnswers[e.id]?.[question.id]||"";return <div className="inline-question" key={question.id}><b>{index+1}. {question.ask}</b>{question.options.length>0?<div className="inline-choices">{question.options.map((option,optionIndex)=>{const selected=question.multi?value.split(" · ").includes(option):value===option;const suggested=optionIndex===0;return <button type="button" className={[selected?"selected":"",suggested?"suggested":""].filter(Boolean).join(" ")} key={option} onClick={()=>setInlineAnswers(prev=>{const current=prev[e.id]||{};if(!question.multi)return {...prev,[e.id]:{...current,[question.id]:option}};const chosen=(current[question.id]||"").split(" · ").filter(Boolean);const next=chosen.includes(option)?chosen.filter(item=>item!==option):[...chosen,option];return {...prev,[e.id]:{...current,[question.id]:next.join(" · ")}}})}><i>{selected?"✓":""}</i>{option}{suggested&&<em>{t("suggestedOption")}</em>}</button>})}</div>:<input value={value} onChange={event=>setInlineAnswers(prev=>({...prev,[e.id]:{...(prev[e.id]||{}),[question.id]:event.target.value}}))} placeholder={t("shortAnswerPlaceholder")}/>}</div>})}<button type="button" className="submit-inline" disabled={sending||!parseInlineQuestions(e.text, t).every(question=>inlineAnswers[e.id]?.[question.id]?.trim())} onClick={()=>submitInlineInterview(e,parseInlineQuestions(e.text, t))}>{t("sendTheseAnswers")}</button></div>}{e.receipt&&<ReceiptLine receipt={e.receipt} t={t} locale={locale}/>} {e.role==="ai"&&<div className="entry-feedback"><button type="button" onClick={()=>setCommentingEntry(commentingEntry===e.id?"":e.id)}>✎ {t("commentResult")}</button>{commentingEntry===e.id&&<div className="entry-comment-box"><textarea autoFocus value={entryComments[e.id]||""} onChange={event=>setEntryComments(prev=>({...prev,[e.id]:event.target.value}))} placeholder={t("commentPlaceholder")}/><div><button type="button" onClick={()=>setCommentingEntry("")}>{t("cancel")}</button><button type="button" className="submit-comment" disabled={sending||!(entryComments[e.id]||"").trim()} onClick={()=>submitEntryComment(e)}>{t("sendComment")}</button></div></div>}</div>}</div>
           </> : <><div className="rail"><span>{e.kind === "decision" ? "◆" : e.kind === "task" ? "✓" : e.kind === "file" ? "↗" : "●"}</span></div><div className="card"><div className="card-top"><div><small>{e.meta}</small><h3>{e.title}</h3></div><time>{e.time}</time></div><p>{e.text}</p>{e.notice&&<p className="result-warning">{e.notice}</p>}{e.kind === "task" && i === 9 && <div className="progress"><i/><span>{t("executing")}</span></div>}{e.receipt&&<ReceiptLine receipt={e.receipt} t={t} locale={locale}/>} {(["result","file","task"] as Kind[]).includes(e.kind)&&<div className="entry-feedback"><button type="button" onClick={()=>setCommentingEntry(commentingEntry===e.id?"":e.id)}>✎ {t("commentResult")}</button>{commentingEntry===e.id&&<div className="entry-comment-box"><textarea autoFocus value={entryComments[e.id]||""} onChange={event=>setEntryComments(prev=>({...prev,[e.id]:event.target.value}))} placeholder={t("commentPlaceholder")}/><div><button type="button" onClick={()=>setCommentingEntry("")}>{t("cancel")}</button><button type="button" className="submit-comment" disabled={sending||!(entryComments[e.id]||"").trim()} onClick={()=>submitEntryComment(e)}>{t("sendComment")}</button></div></div>}</div>}</div></>}
           {pendingPatch&&e.kind==="result"&&e.id.startsWith("patch-")&&<div className="inline-patch-approval"><div><b>{t("filesReady", { count: pendingPatch.files.length })}</b><span>{pendingPatch.files.map(file=>`${file.operation}: ${file.path}`).join(" · ")}</span></div><button type="button" onClick={()=>setPendingPatch(null)}>{t("cancel")}</button><button type="button" className="apply" onClick={applyPendingPatch}>{t("applyPatch")}</button></div>}
           {e.kind==="result"&&e.id.startsWith("folder-")&&<div className="inline-folder-actions"><button type="button" onClick={chooseFolder}>{t("changeFolder")}</button><button type="button" className="apply" onClick={()=>setExecutionMode("analyze")}>{t("normalChat")}</button></div>}
@@ -1074,10 +1132,11 @@ export default function Home() {
       <div className="composer-wrap" ref={composerWrapRef}>
         <div className="work-mode"><button className={executionMode==="analyze"?"active":""} onClick={()=>setExecutionMode("analyze")}><b>{t("normalChat")}</b><span>{t("normalChatHint")}</span></button><button className={executionMode==="execute"?"active":""} onClick={()=>folderHandle?setExecutionMode("execute"):chooseFolder()}><b>{t("projectWork")}</b><span>{folderHandle?`${t("folderPrefix")} ${folderHandle.name}`:t("chooseFolderOnDevice")}</span></button>{executionMode==="execute"&&<button type="button" className="change-folder" onClick={chooseFolder}>{t("changeFolder")}</button>}</div>
         {executionMode==="execute"&&!folderHandle&&<div className="folder-required-banner"><b>{t("missingFolderTitle")}</b><p>{t("missingFolderMessage")} {t("missingFolderAction")}</p><div><button type="button" className="primary" onClick={chooseFolder}>{t("changeFolder")}</button><button type="button" onClick={()=>setExecutionMode("analyze")}>{t("normalChat")}</button></div></div>}
+        {pendingClearBrief&&<div className="clear-brief-confirm"><header><b>{t("clearBriefConfirmTitle")}</b><small>{t("clearBriefConfirmHint")}</small><em>{pendingClearBrief.brief.gate}</em></header><div className="clear-brief-slots">{pendingClearBrief.brief.slots.map(slot=><label key={slot.id}><span>{slot.label}<small>{slot.source} · {slot.confidence}</small></span><input value={slot.value} onChange={event=>setPendingClearBrief(prev=>prev?{...prev,brief:updateClearBriefSlot(prev.brief,slot.id,event.target.value)}:prev)}/></label>)}</div><label className="clear-brief-assumptions"><span>{t("clearBriefAssumptions")}</span><textarea value={pendingClearBrief.brief.assumptions.join("\n")} onChange={event=>setPendingClearBrief(prev=>prev?{...prev,brief:updateClearBriefAssumptions(prev.brief,event.target.value)}:prev)} placeholder={t("clearBriefAssumptionsPlaceholder")}/></label>{pendingClearBrief.brief.missingRequired.length>0&&<p className="upload-error">{t("clearBriefHardMissing",{slots:pendingClearBrief.brief.missingRequired.join(", ")})}</p>}<details className="clear-brief-card"><summary>{t("clearBriefInspect")}</summary><pre>{serializeClearBrief(pendingClearBrief.brief)}</pre><button type="button" onClick={()=>{void navigator.clipboard?.writeText(serializeClearBrief(pendingClearBrief.brief));}}>{t("clearBriefCopy")}</button></details><div className="interview-actions"><button type="button" onClick={()=>{const pending=pendingClearBrief;setPendingInterview({entryId:pending.entryId,goal:pending.brief.goal,questions:pending.questions,intentFamily:pending.brief.intentFamily,gate:pending.brief.gate,allowedSlotIds:pending.allowedSlotIds});setInterviewAnswers(Object.fromEntries(pending.brief.slots.map(slot=>[slot.id,slot.value])));setInterviewFreeText({});setClarificationOverride(pending.brief.notes||"");setEntries(prev=>prev.filter(entry=>entry.id!==pending.briefEntryId));setPendingClearBrief(null);}}>{t("clearBriefBackToQuestions")}</button><button type="button" className="primary" onClick={()=>sendMessage(false)} disabled={sending||!validateClearBriefForGenerate(pendingClearBrief.brief).ok}>{t("generateFromBrief")}</button></div></div>}
         {sending&&<div className="processing-card"><span className="processing-spinner"/><div><b>{t("processing")}</b><small>{t("processingHint")}</small></div><em>{t("running")}</em></div>}
         {!provider ? <div className="connection-warning"><span>!</span><p><b>{t("noModelYet")}</b> {t("connectToStart")}</p><button onClick={()=>setProvidersOpen(true)}>{t("connectModel")}</button></div> : <div className="connected-bar"><span>✓</span><p><b>{provider}</b> · {model}</p><button onClick={disconnectProvider}>{t("disconnect")}</button></div>}
         <div className="execution-mode"><div><b>{executionMode === "execute" ? t("executeWithApproval") : t("chatAnalyze")}</b><span>{executionMode === "execute" ? t("canEditInFolder", { name: folderHandle?.name || t("defaultFolder") }) : t("readAndReply")}</span></div><button disabled={executionMode !== "execute" && !folderHandle} onClick={()=>setExecutionMode(mode=>mode === "analyze" ? "execute" : "analyze")}>{executionMode === "execute" ? t("switchAnalyze") : folderHandle ? t("enableExecute") : t("connectToExecute")}</button></div>{pendingPatch&&<div className="patch-preview"><div><b>{t("filesPendingReview", { count: pendingPatch.files.length })}</b><span>{pendingPatch.summary}</span><small>{pendingPatch.files.map(file=>`${file.operation}: ${file.path}`).join(" · ")}</small></div><button onClick={()=>setPendingPatch(null)}>{t("cancel")}</button><button className="apply" onClick={applyPendingPatch}>{t("applyPatch")}</button></div>}{attachments.length>0&&<div className="attachment-list">{attachments.map(file=><span key={file.name}>↗ {file.name} <small>{Math.ceil(file.size/1024)} KB</small><button onClick={()=>setAttachments(prev=>prev.filter(item=>item.name!==file.name))}>×</button></span>)}</div>}{uploadError&&<div className="upload-error">{uploadError}</div>}<div className="composer"><textarea aria-label={t("composerAria")} value={draft} onChange={e=>updateDraft(e.target.value)} onKeyDown={e=>{if(e.nativeEvent.isComposing)return;if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage(false)}}} placeholder={provider ? t("prompt") : t("promptNoModel")}/><div className="composer-actions"><div><select aria-label={t("providerSelectAria")} value={provider || ""} disabled><option>{provider ? `${provider} · ${model}` : t("noModel")}</option></select><input ref={fileRef} className="file-input" type="file" multiple accept=".txt,.md,.markdown,.csv,.tsv,.json,.jsonl,.ndjson,.xml,.yaml,.yml,.toml,.ini,.cfg,.conf,.log,.sql,.html,.htm,.css,.scss,.sass,.less,.svg,.tex,.bib,.eml,.ics,.vcf,.js,.jsx,.mjs,.cjs,.ts,.tsx,.py,.ipynb,.java,.c,.cc,.cpp,.cxx,.h,.hpp,.cs,.go,.rs,.rb,.php,.swift,.kt,.kts,.dart,.lua,.r,.sh,.bash,.zsh,.fish,.ps1,.bat,.cmd,.vue,.svelte,.pdf,.png,.jpg,.jpeg,.webp,.gif,.docx,.xlsx,.pptx,.odt,.ods,.odp,.rtf,text/*,application/pdf,image/*" onChange={e=>attachFiles(e.target.files)}/><button onClick={()=>fileRef.current?.click()}>＋ {t("attach")}</button><button className="context-on"><i/> {t("autoContext")}</button></div></div></div><p>{t("taskCanvasHint")}</p>
-        {sending?<button type="button" className="unified-run" onClick={()=>requestAbortRef.current?.abort()}>{t("stopRequest")}<span>■</span></button>:<button type="button" className="unified-run" onClick={()=>sendMessage(false)} disabled={composerRunDisabled({ hasProvider: Boolean(provider), hasDraftOrAttachments: Boolean(draft.trim() || attachments.length || pendingInterview), executeNeedsFolder: executeNeedsConnectedFolder(executionMode, Boolean(folderHandle)) })}>{executionMode==="execute"?t("confirmAndRun"):t("send")}<span>→</span></button>}
+        {sending?<button type="button" className="unified-run" onClick={()=>requestAbortRef.current?.abort()}>{t("stopRequest")}<span>■</span></button>:<button type="button" className="unified-run" onClick={()=>sendMessage(false)} disabled={composerRunDisabled({ hasProvider: Boolean(provider), hasDraftOrAttachments: Boolean(draft.trim() || attachments.length || pendingInterview || pendingClearBrief), executeNeedsFolder: executeNeedsConnectedFolder(executionMode, Boolean(folderHandle)) })}>{pendingClearBrief?t("generateFromBrief"):executionMode==="execute"?t("confirmAndRun"):t("send")}<span>→</span></button>}
       </div>
     </section>
 

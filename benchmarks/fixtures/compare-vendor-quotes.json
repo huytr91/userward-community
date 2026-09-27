@@ -1,0 +1,28 @@
+{
+  "id": "compare-vendor-quotes",
+  "domain": "compare",
+  "locale": "en",
+  "goal": "Compare two vendor quotes for office Wi-Fi upgrade and recommend one option for the ops lead.",
+  "expectedGate": "hard",
+  "expectedFamily": "compare",
+  "lane": "local_interview",
+  "questions": [
+    { "id": "match_criteria", "label": "Match criteria", "ask": "How to decide?", "options": ["Price + SLA", "Coverage only", "Brand preference"] },
+    { "id": "evidence", "label": "Evidence", "ask": "What inputs exist?", "options": ["Two PDF quotes attached", "Spreadsheet only", "Verbal notes"] },
+    { "id": "outcome", "label": "Outcome", "ask": "What deliverable?", "options": ["Recommendation memo", "Score table", "Email draft"] },
+    { "id": "constraints", "label": "Constraints", "ask": "Limits?", "options": ["Budget under $4k", "Must keep current ISP", "No downtime weekday"] }
+  ],
+  "answers": {
+    "match_criteria": "Price + SLA + install window",
+    "evidence": "Two PDF quotes attached (synthetic for bench)",
+    "outcome": "Recommendation memo under one page",
+    "constraints": "Budget under $4k · install on weekend only"
+  },
+  "contextExtras": "--- ATTACHED FILE: quote-a.txt ---\nVendor A: $3,600, 99.5% SLA, weekend install, 14-day lead.\n--- ATTACHED FILE: quote-b.txt ---\nVendor B: $3,100, 98.0% SLA, weekday install only, 7-day lead.\n",
+  "judgeFocus": [
+    "Uses stated match criteria and budget/weekend constraint",
+    "Does not invent quote numbers beyond provided extras",
+    "Delivers a recommendation memo, not a quiz"
+  ],
+  "forbiddenInOutput": ["files already written", "purchase completed"]
+}

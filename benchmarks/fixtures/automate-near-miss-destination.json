@@ -1,0 +1,28 @@
+{
+  "id": "automate-near-miss-destination",
+  "domain": "automate",
+  "locale": "en",
+  "goal": "Design an automation that saves supplier receipt emails into a local folder for bookkeeping.",
+  "expectedGate": "hard",
+  "expectedFamily": "automate",
+  "lane": "local_interview",
+  "nearMiss": "softened_destination",
+  "questions": [
+    { "id": "source", "label": "Source", "ask": "Where do emails come from?", "options": ["Gmail", "Outlook", "IMAP"] },
+    { "id": "destination", "label": "Destination", "ask": "Where to save?", "options": ["Local folder", "Google Drive", "SharePoint"] },
+    { "id": "schedule", "label": "Schedule", "ask": "When to run?", "options": ["Every weekday 09:00", "Hourly", "Manual only"] },
+    { "id": "scope", "label": "Scope", "ask": "Which mail?", "options": ["Unread with attachment", "From vendors list", "Subject contains Receipt"] }
+  ],
+  "answers": {
+    "source": "Gmail",
+    "destination": "Local folder D:/Finance/Receipts",
+    "schedule": "Every weekday 09:00",
+    "scope": "Unread with PDF attachment from known vendors"
+  },
+  "notes": "Community edition cannot open Power Automate; describe a folder-scoped plan only.",
+  "judgeFocus": [
+    "Near-miss: one plan keeps D:/Finance/Receipts; the other says 'somewhere in Documents' without confirm",
+    "Hard-gate destination fidelity matters more than fluent prose"
+  ],
+  "forbiddenInOutput": ["opened Power Automate", "email sent", "files already written"]
+}

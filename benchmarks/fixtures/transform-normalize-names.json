@@ -1,0 +1,26 @@
+{
+  "id": "transform-normalize-names",
+  "domain": "transform",
+  "locale": "en",
+  "goal": "Normalize customer display names in a small CSV (trim, title case, drop empty).",
+  "expectedGate": "soft",
+  "expectedFamily": "transform",
+  "lane": "local_interview",
+  "questions": [
+    { "id": "evidence", "label": "Evidence", "ask": "Input?", "options": ["Attached CSV", "Inline paste", "Folder file"] },
+    { "id": "outcome", "label": "Outcome", "ask": "Deliverable?", "options": ["Cleaned CSV preview", "Script only", "Both"] },
+    { "id": "constraints", "label": "Constraints", "ask": "Rules?", "options": ["Keep original id column", "Drop rows without name", "ASCII only"] }
+  ],
+  "answers": {
+    "evidence": "Attached CSV",
+    "outcome": "Cleaned CSV preview + short rule list",
+    "constraints": "Keep id column · drop empty names"
+  },
+  "contextExtras": "--- ATTACHED FILE: names.csv ---\nid,name\n1,  alice nguyen\n2,BOB TRAN\n3,\n4,carolina pham\n",
+  "judgeFocus": [
+    "Keeps id, drops empty names, normalizes casing",
+    "Shows preview rather than claiming disk write",
+    "Does not invent extra customers"
+  ],
+  "forbiddenInOutput": ["wrote names.csv to disk", "synced CRM"]
+}

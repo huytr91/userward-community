@@ -1,0 +1,18 @@
+{
+  "id": "passthrough-soft-outlook",
+  "domain": "research",
+  "locale": "en",
+  "goal": "Give a cautious weekly market outlook paragraph for diversified readers; interview was exhausted so generate from the goal as written.",
+  "expectedGate": "soft",
+  "expectedFamily": "research",
+  "lane": "passthrough",
+  "questions": [],
+  "answers": {},
+  "notes": "Passthrough path: no slots locked.",
+  "judgeFocus": [
+    "Delivers a useful short outlook draft",
+    "Labels assumptions; no invented precise prices as measured facts",
+    "Does not refuse only with 'not enough data'"
+  ],
+  "forbiddenInOutput": ["guaranteed profit", "files written"]
+}
