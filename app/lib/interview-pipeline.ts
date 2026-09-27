@@ -108,7 +108,21 @@ export function buildInterviewPlan(
   const compact = questions.slice(0, 4);
   const allowedSlotIds = allowedSlotsForFamily(classified.family, classified.gate);
   const shallow = isShallowLocalInterview(compact, classified.gate);
-  // Call A only when local coverage is thin — compare no longer forces a model call when the pack is already rich.
+  // Soft gate: never spend a Call A round-trip — local meta pack (or soft fallback) is enough.
+  // Call A JSON-strict failures on free/Ollama were a major user-visible fail source.
+  if (classified.gate === "soft" && shallow) {
+    const softQuestions = compact.length ? compact : softMetaFallbackInterviewQuestions(locale);
+    return {
+      questions: softQuestions,
+      source: compact.length ? "ontology" : "rule",
+      lane: "local_interview",
+      gate: "soft",
+      intentFamily: classified.family,
+      domain: classified.domain,
+      allowedSlotIds,
+    };
+  }
+  // Call A only when local coverage is thin on hard gates.
   const needsCallA = !compact.length || shallow;
 
   if (needsCallA) {

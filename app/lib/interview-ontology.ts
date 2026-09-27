@@ -28,6 +28,10 @@ export type ClassifiedIntent = {
 const ORDINARY_QA =
   /^(vì sao|tại sao|why\b|what is\b|what's\b|sao\s|how come\b|giải thích\s+(tại sao|vì sao)|làm sao\b|làm thế nào\b)/i;
 
+/** Clear ask-for-work markers — distinct from casual Q&A that only mentions work keywords. */
+const EXPLICIT_REQUEST_MARKER =
+  /\b(giúp|hãy|làm ơn|cho (tôi|mình)|viết (cho )?(tôi|mình)|tạo (cho )?(tôi|mình)|please|can you|could you|i need|i want|tôi (cần|muốn)|help me|write me|draft|soạn)\b/i;
+
 const FAMILY_PATTERNS: Array<{ family: IntentFamily; pattern: RegExp }> = [
   // Decide before compare so “so sánh phương án” is not treated as reconcile.
   { family: "decide", pattern: /nên chọn|which should|decide|quyết định|ưu tiên|trade-?off|so sánh phương án|compare options|which option/ },
@@ -82,6 +86,11 @@ export function classifyIntent(draft: string, executionMode: "analyze" | "execut
   if (!family && executionMode === "execute") family = "build";
   if (!family && /cần|muốn|giúp|help|need|want|xử lý/.test(q) && /file|excel|email|dữ liệu|bảng/.test(q)) {
     family = "analyze";
+  }
+  // Casual questions that only mention work keywords ("báo cáo thế nào?") stay ordinary
+  // unless the user clearly asks Userward to produce/do something.
+  if (family && /\?\s*$/.test(draft.trim()) && !EXPLICIT_REQUEST_MARKER.test(q)) {
+    return { family: null, domain: "general", ordinary: true, gate: "none" };
   }
   let domain: DomainPackId = "general";
   for (const row of DOMAIN_PATTERNS) {

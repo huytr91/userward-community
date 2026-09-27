@@ -25,6 +25,23 @@ test("ontology classifies compare and data intents", () => {
   assert.equal(classifyIntent("vì sao trời xanh").ordinary, true);
 });
 
+test("casual questions mentioning work keywords stay ordinary without an ask-to-do marker", () => {
+  assert.equal(classifyIntent("báo cáo này thế nào?").ordinary, true);
+  assert.equal(classifyIntent("code này bị lỗi gì vậy?").ordinary, true);
+  const askWrite = classifyIntent("giúp tôi viết báo cáo tuần này?");
+  assert.equal(askWrite.ordinary, false);
+  assert.ok(askWrite.family === "write" || askWrite.family === "research" || askWrite.family === "analyze");
+  assert.equal(classifyIntent("Please draft a GTM brief for Bitcoin?").ordinary, false);
+});
+
+test("soft shallow packs stay local_interview and never request Call A", () => {
+  const soft = buildInterviewPlan("nghiên cứu xu hướng tin tức thị trường", "analyze", "en");
+  assert.equal(soft.gate, "soft");
+  assert.equal(soft.lane, "local_interview");
+  assert.notEqual(soft.needsModelInterview, true);
+  assert.ok(soft.questions.length >= 1);
+});
+
 test("domain packs produce richer slots than outcome-only", () => {
   const compareQs = buildOntologyInterviewQuestions({
     draft: "đối chiếu bảng email và excel",
