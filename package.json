@@ -21,8 +21,9 @@
     "release:check": "npm run check:public && npm test",
     "export:community": "node scripts/export-community.mjs",
     "test:policy": "node --experimental-strip-types --test tests/policy-rag.test.ts",
-    "test:userward-core": "node --experimental-strip-types --test tests/userward-core.test.ts",
+    "test:userward-core": "node --experimental-strip-types --test tests/userward-core.test.ts tests/clear-brief.test.ts tests/benchmark-fixtures.test.ts",
     "test:local-only": "node --experimental-strip-types --test tests/local-only.test.ts",
+    "bench:fixtures": "node --experimental-strip-types scripts/run-benchmark-fixtures.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },

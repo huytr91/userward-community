@@ -1,0 +1,28 @@
+{
+  "id": "write-gtm-bitcoin",
+  "domain": "write",
+  "locale": "en",
+  "goal": "Write a one-page GTM brief for a Bitcoin spot ETF education campaign aimed at first-time investors.",
+  "expectedGate": "soft",
+  "expectedFamily": "write",
+  "lane": "local_interview",
+  "questions": [
+    { "id": "objective", "label": "Objective", "ask": "What outcome?", "options": ["Awareness", "Leads", "Conversion"] },
+    { "id": "channel", "label": "Channel", "ask": "Primary channel?", "options": ["LinkedIn", "Email", "Landing page"] },
+    { "id": "audience", "label": "Audience", "ask": "Who reads this?", "options": ["Retail beginners", "Internal team", "Press"] },
+    { "id": "output_shape", "label": "Output", "ask": "What to deliver?", "options": ["One-page brief", "Thread", "Slide outline"] }
+  ],
+  "answers": {
+    "objective": "Awareness among retail beginners",
+    "channel": "LinkedIn company page",
+    "audience": "Retail beginners in Vietnam and SE Asia",
+    "output_shape": "One-page brief"
+  },
+  "notes": "No trading advice. Keep under one page.",
+  "judgeFocus": [
+    "Honors objective, channel, audience, output_shape from the brief",
+    "Does not invent precise market prices or fake citations",
+    "Labels soft assumptions if used"
+  ],
+  "forbiddenInOutput": ["file was written", "email was sent", "guaranteed returns"]
+}

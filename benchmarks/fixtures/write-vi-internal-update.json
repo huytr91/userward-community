@@ -1,0 +1,28 @@
+{
+  "id": "write-vi-internal-update",
+  "domain": "write",
+  "locale": "vi",
+  "goal": "Viết cập nhật nội bộ ngắn về tiến độ dự án Userward Community tuần này cho team.",
+  "expectedGate": "soft",
+  "expectedFamily": "write",
+  "lane": "local_interview",
+  "questions": [
+    { "id": "objective", "label": "Mục tiêu", "ask": "Muốn đạt gì?", "options": ["Đồng bộ tiến độ", "Xin quyết định", "Tuyển dụng"] },
+    { "id": "channel", "label": "Kênh", "ask": "Gửi ở đâu?", "options": ["Slack nội bộ", "Email", "Notion"] },
+    { "id": "audience", "label": "Đối tượng", "ask": "Ai đọc?", "options": ["Team kỹ thuật", "Toàn công ty", "Ban lãnh đạo"] },
+    { "id": "output_shape", "label": "Đầu ra", "ask": "Hình thức?", "options": ["5-8 dòng", "Bullet list", "Báo cáo 1 trang"] }
+  ],
+  "answers": {
+    "objective": "Đồng bộ tiến độ Clear Brief protocol",
+    "channel": "Slack nội bộ",
+    "audience": "Team kỹ thuật",
+    "output_shape": "Bullet list ngắn"
+  },
+  "notes": "Tiếng Việt, không phóng đại số liệu chưa đo.",
+  "judgeFocus": [
+    "Tiếng Việt, đúng kênh Slack / audience team kỹ thuật",
+    "Không bịa số benchmark hoặc claim đã ship nếu brief không nói",
+    "Dạng bullet ngắn"
+  ],
+  "forbiddenInOutput": ["đã gửi Slack", "đã merge production"]
+}

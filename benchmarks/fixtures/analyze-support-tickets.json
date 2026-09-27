@@ -1,0 +1,28 @@
+{
+  "id": "analyze-support-tickets",
+  "domain": "analyze",
+  "locale": "en",
+  "goal": "Analyze last week's support tickets and list the top recurring themes.",
+  "expectedGate": "soft",
+  "expectedFamily": "analyze",
+  "lane": "local_interview",
+  "questions": [
+    { "id": "timeframe", "label": "Timeframe", "ask": "Which window?", "options": ["Last 7 days", "Last 30 days", "This quarter"] },
+    { "id": "data_grain", "label": "Grain", "ask": "Unit of analysis?", "options": ["Ticket theme", "Customer", "Agent"] },
+    { "id": "output_shape", "label": "Output", "ask": "Format?", "options": ["Top 5 themes", "Full table", "Narrative"] },
+    { "id": "evidence", "label": "Evidence", "ask": "Data source?", "options": ["Attached CSV export", "Paste sample", "Memory only"] }
+  ],
+  "answers": {
+    "timeframe": "Last 7 days",
+    "data_grain": "Ticket theme",
+    "output_shape": "Top 5 themes with counts",
+    "evidence": "Attached CSV export (synthetic bench rows)"
+  },
+  "contextExtras": "--- ATTACHED FILE: tickets.csv ---\nid,theme\n1,login\n2,billing\n3,login\n4,refund\n5,billing\n6,login\n7,shipping\n8,billing\n9,refund\n10,login\n",
+  "judgeFocus": [
+    "Uses last-7-days / theme grain / top themes framing",
+    "Does not invent tickets beyond provided CSV extras",
+    "Does not claim spreadsheet was updated on disk"
+  ],
+  "forbiddenInOutput": ["database updated", "email blasted to customers"]
+}

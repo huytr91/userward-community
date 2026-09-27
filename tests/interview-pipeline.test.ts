@@ -97,9 +97,15 @@ test("unclear answers trigger follow-up builders", () => {
   assert.equal(isInterviewAnswerClear("ok"), false);
   assert.equal(isInterviewAnswerClear("Không có yêu cầu đặc biệt"), false);
   assert.equal(isInterviewAnswerClear("Match amount, bank name, and beneficiary exactly"), true);
+  assert.equal(isInterviewAnswerClear("Có", ["Có", "Không"]), true);
+  assert.equal(isInterviewAnswerClear("Không", ["Có", "Không"]), true);
+  assert.equal(isInterviewAnswerClear("Có"), false);
+  assert.equal(isInterviewAnswerClear("Yes — may edit existing files", ["Yes — may edit existing files", "No — create new files only"]), true);
   const questions = localFallbackInterviewQuestions("en");
   const answers = Object.fromEntries(questions.map(question => [question.id, "ok"]));
   assert.deepEqual(unclearInterviewSlotIds({ questions, answers }), questions.map(question => question.id));
+  const yesNo = [{ id: "existing", label: "Existing", ask: "Edit?", options: ["Có", "Không"] }];
+  assert.deepEqual(unclearInterviewSlotIds({ questions: yesNo, answers: { existing: "Có" } }), []);
   const follow = buildUnclearFollowUpQuestions({ questions, answers, locale: "en" });
   assert.equal(follow.length, questions.length);
   assert.match(follow[0].ask, /more specific/i);

@@ -1,0 +1,26 @@
+{
+  "id": "hard-missing-destination",
+  "domain": "automate",
+  "locale": "en",
+  "goal": "Automate saving invoices from email into storage.",
+  "expectedGate": "hard",
+  "expectedFamily": "automate",
+  "lane": "local_interview",
+  "expectGenerateBlocked": true,
+  "questions": [
+    { "id": "source", "label": "Source", "ask": "Mailbox?", "options": ["Gmail", "Outlook"] },
+    { "id": "destination", "label": "Destination", "ask": "Where to save?", "options": ["Local folder", "Drive"] },
+    { "id": "schedule", "label": "Schedule", "ask": "When?", "options": ["Daily", "Manual"] }
+  ],
+  "answers": {
+    "source": "Gmail",
+    "destination": "ok",
+    "schedule": "Daily at 08:00"
+  },
+  "notes": "Negative fixture: unclear destination must block generate.",
+  "judgeFocus": [
+    "Protocol should refuse generate until destination is clear",
+    "If an output exists anyway, it must not invent a storage path"
+  ],
+  "forbiddenInOutput": ["saved to C:\\\\", "opened Outlook"]
+}

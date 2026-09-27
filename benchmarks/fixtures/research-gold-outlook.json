@@ -1,0 +1,26 @@
+{
+  "id": "research-gold-outlook",
+  "domain": "research",
+  "locale": "en",
+  "goal": "Summarize the near-term gold market outlook for a weekly internal note.",
+  "expectedGate": "soft",
+  "expectedFamily": "research",
+  "lane": "local_interview",
+  "questions": [
+    { "id": "timeframe", "label": "Timeframe", "ask": "Which period?", "options": ["Next 1-2 weeks", "This quarter", "12 months"] },
+    { "id": "output_shape", "label": "Output", "ask": "Format?", "options": ["5 bullets", "One paragraph", "Table"] },
+    { "id": "constraints", "label": "Constraints", "ask": "Any limits?", "options": ["No trading advice", "Sources required", "Internal only"] }
+  ],
+  "answers": {
+    "timeframe": "Next 1-2 weeks",
+    "output_shape": "5 bullets",
+    "constraints": "No trading advice · qualitative only"
+  },
+  "notes": "Do not quiz the reader on why gold moved; write the note.",
+  "judgeFocus": [
+    "Stays within 1-2 week qualitative outlook",
+    "No trading recommendations or fake precise citations",
+    "Five bullets or clearly equivalent short note"
+  ],
+  "forbiddenInOutput": ["buy now", "sell now", "exact price target as fact"]
+}

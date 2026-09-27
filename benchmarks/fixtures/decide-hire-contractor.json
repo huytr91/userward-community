@@ -1,0 +1,25 @@
+{
+  "id": "decide-hire-contractor",
+  "domain": "decide",
+  "locale": "en",
+  "goal": "Help me decide whether to hire a contractor or keep overtime for a two-week reporting crunch.",
+  "expectedGate": "soft",
+  "expectedFamily": "decide",
+  "lane": "local_interview",
+  "questions": [
+    { "id": "outcome", "label": "Outcome", "ask": "What decision artifact?", "options": ["Pros/cons + recommendation", "Scorecard", "Email to CFO"] },
+    { "id": "constraints", "label": "Constraints", "ask": "Hard limits?", "options": ["Budget $2k", "No new headcount", "Must finish in 10 business days"] },
+    { "id": "audience", "label": "Audience", "ask": "Who decides?", "options": ["Ops manager", "CFO", "Team lead"] }
+  ],
+  "answers": {
+    "outcome": "Pros/cons + recommendation",
+    "constraints": "Budget about $2k · finish in 10 business days",
+    "audience": "Ops manager"
+  },
+  "judgeFocus": [
+    "Gives a decision aid for ops manager within budget/time constraints",
+    "Labels assumptions; does not invent approved budget figures as facts",
+    "Does not claim HR actions were executed"
+  ],
+  "forbiddenInOutput": ["contractor hired", "payroll updated"]
+}

@@ -41,3 +41,11 @@ Audit date: 2026-08-13
 ## Release decision
 
 The repository is suitable for a **public developer preview**, not a production hosted service. Keep the preview label visible and do not market Power BI, desktop automation, RPA, or deployment as implemented capabilities.
+
+**Do not** reverse-proxy or deploy the local API (`127.0.0.1`) to the public Internet. Abuse controls (auth, per-IP rate limits) are intentionally out of scope while the product remains loopback-only. Remembering a provider connection stores the API key in browser plaintext only when the user opts in (default is session-only).
+
+## Mitigations since 2026-09 audit feedback
+
+- Provider “Remember connection” defaults to **off** (sessionStorage unless opted in).
+- Offered interview choices (including short Yes/No) are treated as clear answers so binary slots are not falsely rejected by CLEAR follow-ups.
+- CI runs `npm run lint` (currently non-blocking until legacy `page.tsx` findings are cleared; treat new lint errors as blockers in review).
