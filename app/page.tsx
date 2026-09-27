@@ -599,7 +599,7 @@ export default function Home() {
     const selectedModel = provider === "OpenRouter" && projectIntent.freeEligible ? "openrouter/free" : model;
     const controller = new AbortController();
     requestAbortRef.current = controller;
-    const requestWallMs = providerRoundTripTimeoutMs(true) + 5_000;
+    const requestWallMs = providerRoundTripTimeoutMs(false) + 5_000;
     const requestTimeoutId = window.setTimeout(() => {
       controller.abort(Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" }));
     }, requestWallMs);
@@ -920,7 +920,7 @@ export default function Home() {
           } catch { throw new Error(t("invalidPatch")); }
         } else {
           const reply = String(data.text || "");
-          const thin = !usePassthrough && looksLikeInsufficientAnswer(reply) && thinClarifyRetriesRef.current < 2;
+          const thin = !usePassthrough && looksLikeInsufficientAnswer(reply) && thinClarifyRetriesRef.current < 1;
           const notice = [resultNotice, thin ? t("thinAnswerNotice") : ""].filter(Boolean).join("\n\n") || undefined;
           const receipt = createExecutionReceipt({ status: "completed", model: data.selectedModel || selectedModel, context: contextPack, usage, savings: requestSavings, briefId: runBrief?.id, briefSummary: runBrief ? summarizeClearBrief(runBrief) : undefined });
           const clarifyGoal = lastWorkGoalRef.current || text;

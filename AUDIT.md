@@ -48,4 +48,5 @@ The repository is suitable for a **public developer preview**, not a production 
 
 - Provider “Remember connection” defaults to **off** (sessionStorage unless opted in).
 - Offered interview choices (including short Yes/No) are treated as clear answers so binary slots are not falsely rejected by CLEAR follow-ups.
+- Soft-gate shallow briefs skip Call A (local meta pack only); casual “?” questions without ask-to-do markers stay ordinary chat; Call A uses the non-stream timeout wall; thin refusal reopen is capped at 1.
 - CI runs `npm run lint` (currently non-blocking until legacy `page.tsx` findings are cleared; treat new lint errors as blockers in review).
