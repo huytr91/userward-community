@@ -55,6 +55,8 @@ test("open analysis and data packs prefer local interview over Call A", () => {
   assert.notEqual(data.needsModelInterview, true);
   assert.equal(isShallowLocalInterview(data.questions, "hard"), false);
   assert.match(INTERVIEW_ONLY_RULE, /Never quiz them on the subject matter/i);
+  assert.match(INTERVIEW_ONLY_RULE, /VOICE:/);
+  assert.match(INTERVIEW_ONLY_RULE, /\{snippet\}/);
 });
 
 test("compare email vs excel uses local pack when slots are rich", () => {
@@ -156,18 +158,27 @@ test("Call A quiz questions are filtered; soft fail uses meta fallback before pa
     gate: "soft",
     allowPassthroughOnCallAFail: true,
     allowedSlotIds: ["timeframe"],
+    goal: "phân tích thị trường vàng sắp tới",
+    locale: "vi",
   });
   assert.equal(softFail.action, "interview");
   if (softFail.action === "interview") {
     assert.ok(softFail.questions.some(question => question.id === "timeframe" || question.id === "output_shape"));
+    assert.ok(softFail.questions.every(question => question.ask.startsWith('Với "')));
+    assert.ok(softFail.questions.some(question => /thị trường vàng/.test(question.ask)));
   }
   const hard = resolveCallAInterviewResult({
     seed: [],
     modelQuestions: [quiz],
     gate: "hard",
     allowPassthroughOnCallAFail: false,
+    goal: "check email vs excel amounts",
+    locale: "en",
   });
   assert.equal(hard.action, "interview");
+  if (hard.action === "interview") {
+    assert.ok(hard.questions.every(question => question.ask.startsWith('For "')));
+  }
   assert.match(PASSTHROUGH_GENERATE_RULE, /PASSTHROUGH GENERATE/);
 });
 
@@ -177,6 +188,8 @@ test("thin refusals are detected; deliverable rule forbids empty stop", () => {
   assert.match(DELIVERABLE_AFTER_BRIEF_RULE, /Forbidden ending/i);
   const gaps = buildContextGapFollowUpQuestions("en", "viral go-to-market plan");
   assert.ok(gaps.some(question => question.id === "objective" || question.id === "channel"));
+  assert.ok(gaps.every(question => question.ask.startsWith('For "')));
+  assert.ok(gaps.some(question => /go-to-market|viral/i.test(question.ask)));
 });
 
 test("unknown content rule forbids inventing unverified facts", () => {

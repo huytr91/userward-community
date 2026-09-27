@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { classifyIntent, buildOntologyInterviewQuestions, isGoToMarketLike } from "../app/lib/interview-ontology.ts";
+import { classifyIntent, buildOntologyInterviewQuestions, goalSnippet, isGoToMarketLike } from "../app/lib/interview-ontology.ts";
 import {
   buildInterviewPlan,
   isActionableGoal,
@@ -111,4 +111,38 @@ test("personal pack remembers frequent clear answers only", () => {
   });
   assert.equal(injected[0].options[0], "Local folder D:\\Reports");
   assert.equal(isInterviewAnswerClear("ok"), false);
+});
+
+test("goalSnippet strips command verbs and trail fillers", () => {
+  assert.match(goalSnippet("Tạo automation lấy email và lưu file", "vi"), /automation lấy email/);
+  assert.doesNotMatch(goalSnippet("Tạo automation lấy email và lưu file", "vi"), /^Tạo/i);
+  assert.match(goalSnippet("giúp tôi viết báo cáo tuần này nhé", "vi"), /báo cáo tuần này/);
+  assert.doesNotMatch(goalSnippet("giúp tôi viết báo cáo tuần này nhé", "vi"), /giúp tôi|nhé/i);
+  assert.match(goalSnippet("Please draft a GTM brief for Bitcoin", "en"), /GTM brief/i);
+  assert.doesNotMatch(goalSnippet("Please draft a GTM brief for Bitcoin", "en"), /^Please|^draft/i);
+  assert.equal(goalSnippet("phân tích thị trường vàng", "en"), "this request");
+  assert.equal(goalSnippet("", "en"), "this request");
+});
+
+test("ontology asks are topical For/Với templates with the goal snippet", () => {
+  const en = buildOntologyInterviewQuestions({
+    draft: "Create automation to fetch email and save files",
+    executionMode: "analyze",
+    locale: "en",
+  });
+  assert.ok(en.length >= 1);
+  const enAsk = en.find(q => q.id === "schedule") || en.find(q => q.id === "destination") || en[0];
+  assert.match(enAsk.ask, /^For "/);
+  assert.match(enAsk.ask, /automation/i);
+  assert.doesNotMatch(enAsk.ask, /^For "Create /i);
+
+  const vi = buildOntologyInterviewQuestions({
+    draft: "Tạo automation lấy email và lưu file",
+    executionMode: "analyze",
+    locale: "vi",
+  });
+  const schedule = vi.find(q => q.id === "schedule") || vi.find(q => q.id === "destination") || vi[0];
+  assert.match(schedule.ask, /^Với "/);
+  assert.match(schedule.ask, /automation lấy email/);
+  assert.doesNotMatch(schedule.ask, /Với "Tạo /);
 });

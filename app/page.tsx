@@ -618,6 +618,7 @@ export default function Home() {
         allowPassthroughOnCallAFail: plan.allowPassthroughOnCallAFail,
         allowedSlotIds: plan.allowedSlotIds,
         locale,
+        goal,
       });
       setEntries(prev => prev.filter(entry => entry.id !== preparingId));
       if (resolved.action === "passthrough") {
