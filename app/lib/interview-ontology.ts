@@ -234,13 +234,39 @@ const WRITE_AUDIENCE: SlotDef = {
   optionKeys: ["optWriteAudCustomer", "optWriteAudProspect", "optWriteAudInternal", "optWriteAudPublic"],
 };
 
-function slotToQuestion(slot: SlotDef, locale: AppLocale): InterviewQuestion {
-  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
+const VI_CHARS = /[ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i;
+const LEAD_VERB =
+  /^(?:(?:giúp|hãy|làm ơn)\s+(?:cho\s+)?(?:tôi|mình)\s+|(?:please|help me|can you|could you|i need(?:\s+to)?|i want(?:\s+to)?)\s+)?(?:viết|soạn|tạo|xây|làm|phân tích|nghiên cứu|kiểm tra|đối chiếu|chuẩn hóa|write|create|build|make|draft|analyze|analyse|research|check|compare|implement|develop)(?:\s+(?:cho|giúp)\s+(?:tôi|mình)|\s+for\s+me|\s+me|\s+us)?\s+/i;
+const TRAIL_FILLER = /\s*(giúp\s+(tôi|mình)|nhé|đi|với\s+(tôi|mình)|please|for me)\s*[?.!]*$/i;
+
+/**
+ * Short noun-ish topic from the user goal for topical interview asks.
+ * Strips leading command verbs so templates stay grammatical.
+ */
+export function goalSnippet(draft: string, locale: AppLocale, maxWords = 10): string {
+  let text = (draft || "").trim().replace(/\s+/g, " ");
+  if (!text) return locale === "vi" ? "yêu cầu này" : "this request";
+  text = text.replace(LEAD_VERB, "");
+  // Repeat once for stacked prefixes ("giúp tôi viết …").
+  text = text.replace(LEAD_VERB, "");
+  text = text.replace(TRAIL_FILLER, "");
+  text = text.replace(/[?.!]+$/g, "").trim();
+  if (!text) return locale === "vi" ? "yêu cầu này" : "this request";
+  // Avoid dumping Vietnamese into English UI chrome.
+  if (locale === "en" && VI_CHARS.test(text)) return "this request";
+  const words = text.split(/\s+/).filter(Boolean);
+  const clipped = words.slice(0, maxWords).join(" ");
+  return clipped.length > 72 ? `${clipped.slice(0, 69).trim()}…` : clipped;
+}
+
+function slotToQuestion(slot: SlotDef, locale: AppLocale, draft: string): InterviewQuestion {
+  const topic = goalSnippet(draft, locale);
+  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key, { topic });
   return {
     id: slot.id,
     label: t(slot.labelKey),
     ask: t(slot.askKey),
-    options: slot.optionKeys.map(key => t(key)),
+    options: slot.optionKeys.map(key => translate(locale, key)),
   };
 }
 
@@ -353,7 +379,7 @@ export function buildOntologyInterviewQuestions(input: {
     draft: input.draft,
     executionMode: input.executionMode,
   });
-  return slots.map(slot => slotToQuestion(slot, input.locale));
+  return slots.map(slot => slotToQuestion(slot, input.locale, input.draft));
 }
 
 /** Slots that count as rich local coverage (not shallow). */

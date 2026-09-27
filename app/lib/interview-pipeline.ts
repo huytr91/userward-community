@@ -2,6 +2,7 @@ import { translate, type AppLocale } from "./i18n.ts";
 import {
   buildOntologyInterviewQuestions,
   classifyIntent,
+  goalSnippet,
   HARD_SLOT_IDS,
   META_SLOT_IDS,
   RICH_DOMAIN_SLOT_IDS,
@@ -37,7 +38,7 @@ export type CallAResolution =
   | { action: "interview"; questions: InterviewQuestion[]; notice?: string }
   | { action: "passthrough" };
 
-export { classifyIntent } from "./interview-ontology.ts";
+export { classifyIntent, goalSnippet } from "./interview-ontology.ts";
 export type { IntentFamily, DomainPackId, ClassifiedIntent, InterviewGate } from "./interview-ontology.ts";
 
 /** True when the user is requesting work/deliverable scope, not ordinary Q&A. */
@@ -111,7 +112,7 @@ export function buildInterviewPlan(
   // Soft gate: never spend a Call A round-trip — local meta pack (or soft fallback) is enough.
   // Call A JSON-strict failures on free/Ollama were a major user-visible fail source.
   if (classified.gate === "soft" && shallow) {
-    const softQuestions = compact.length ? compact : softMetaFallbackInterviewQuestions(locale);
+    const softQuestions = compact.length ? compact : softMetaFallbackInterviewQuestions(locale, draft);
     return {
       questions: softQuestions,
       source: compact.length ? "ontology" : "rule",
@@ -151,8 +152,9 @@ export function buildInterviewPlan(
 }
 
 /** Offline / model-failure card so hard-gate users are never blocked without questions. */
-export function localFallbackInterviewQuestions(locale: AppLocale = "en"): InterviewQuestion[] {
-  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
+export function localFallbackInterviewQuestions(locale: AppLocale = "en", goal = ""): InterviewQuestion[] {
+  const topic = goalSnippet(goal, locale);
+  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key, { topic });
   return [
     { id: "outcome", label: t("qOutcomeLabel"), ask: t("qOutcomeAsk"), options: [t("optOutcomeAnalysis"), t("optOutcomeDoc"), t("optOutcomeScript"), t("optOutcomeOther")] },
     { id: "evidence", label: t("qEvidenceLabel"), ask: t("qEvidenceAsk"), options: [t("optEvidenceAttached"), t("optEvidencePaste"), t("optEvidenceDescribe")] },
@@ -160,8 +162,9 @@ export function localFallbackInterviewQuestions(locale: AppLocale = "en"): Inter
 }
 
 /** Soft-gate fallback when Call A is unavailable but local seed is empty. */
-export function softMetaFallbackInterviewQuestions(locale: AppLocale = "en"): InterviewQuestion[] {
-  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
+export function softMetaFallbackInterviewQuestions(locale: AppLocale = "en", goal = ""): InterviewQuestion[] {
+  const topic = goalSnippet(goal, locale);
+  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key, { topic });
   return [
     { id: "timeframe", label: t("qTimeframeLabel"), ask: t("qTimeframeAsk"), options: [t("optTimeNearTerm"), t("optTimeMonth"), t("optTimeQuarter"), t("optTimeOpen")] },
     { id: "output_shape", label: t("qOutputShapeLabel"), ask: t("qOutputShapeAsk"), options: [t("optOutSummary"), t("optOutRiskChecklist"), t("optOutArgumentFrame"), t("optOutFullWriteup")] },
@@ -225,18 +228,20 @@ export function resolveCallAInterviewResult(input: {
   allowPassthroughOnCallAFail?: boolean;
   allowedSlotIds?: string[];
   locale?: AppLocale;
+  goal?: string;
 }): CallAResolution {
   const locale = input.locale || "en";
+  const goal = input.goal || "";
   const filtered = filterMetaInterviewQuestions(input.modelQuestions, input.allowedSlotIds);
   const merged = mergeInterviewQuestions(input.seed, filtered);
   if (merged.length >= 2) return { action: "interview", questions: merged };
   if (input.seed.length >= 2) return { action: "interview", questions: input.seed };
   if (input.gate === "soft") {
     // Soft briefs still have a local meta pack — use it before any passthrough.
-    return { action: "interview", questions: softMetaFallbackInterviewQuestions(locale), notice: "fallback" };
+    return { action: "interview", questions: softMetaFallbackInterviewQuestions(locale, goal), notice: "fallback" };
   }
   if (input.gate === "hard" || !input.allowPassthroughOnCallAFail) {
-    return { action: "interview", questions: localFallbackInterviewQuestions(locale), notice: "fallback" };
+    return { action: "interview", questions: localFallbackInterviewQuestions(locale, goal), notice: "fallback" };
   }
   return { action: "passthrough" };
 }
@@ -365,6 +370,13 @@ export const INTERVIEW_ONLY_RULE = [
   "- Never ask the user to choose libraries, frameworks, APIs, architecture, folder layout, or test tools.",
   "- Match the language of the user goal.",
   "- If SEED QUESTIONS are provided, keep useful ones and add only missing material META slots (do not duplicate).",
+  "VOICE:",
+  "- Sound like a sharp colleague who already read the goal — not a blank survey form.",
+  "- Reference a concrete detail from USER GOAL in each ask (a noun phrase, channel, file type, period). Prefer: For \"{snippet}\" — …? / Với \"{snippet}\" — …?",
+  "- Vary sentence shape across questions; avoid starting every ask with Choose/Chọn/Pick.",
+  "- Options should be concrete guesses for THIS goal (e.g. \"Gmail inbox → local Reports folder\"), not generic A/B/C labels.",
+  "- Bad: \"Choose the time window for this request.\" Good: \"For \\\"gold market outlook\\\" — which window should this cover: this week, this month, or this quarter?\"",
+  "- Bad: \"Chọn góc nhìn định hình câu trả lời.\" Good: \"Với \\\"xu hướng tin tức thị trường\\\" — góc nhìn cá nhân, vĩ mô, hay brief nội bộ?\"",
 ].join("\n");
 
 /** Last-resort generate after interview packs were exhausted — still deliver a useful answer. */
@@ -407,7 +419,8 @@ export function looksLikeInsufficientAnswer(text: string): boolean {
 
 /** Extra CLEAR questions when a thin answer shows the brief is still incomplete. */
 export function buildContextGapFollowUpQuestions(locale: AppLocale = "en", goal = ""): InterviewQuestion[] {
-  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
+  const topic = goalSnippet(goal, locale);
+  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key, { topic });
   const gtm = /viral|go-?to-?market|gtm|chiến lược|content|marketing|tiktok|instagram|launch|ra mắt/i.test(goal);
   if (gtm || /viết|write|draft|soạn/i.test(goal)) {
     return [
