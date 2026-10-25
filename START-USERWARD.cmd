@@ -1,7 +1,7 @@
 @echo off
 setlocal
 title Userward Local
-echo Userward Local - build 2026.08.15.2
+echo Userward Local - build 2026.10.24.1
 echo Opens http://127.0.0.1:3001 (port 3000 reserved for AI agent RPA tools)
 echo Keep this window open. Closing it stops Userward.
 echo.

@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path -Parent $PSScriptRoot)
-Write-Host "Starting Userward Local build 2026.08.15.2" -ForegroundColor Cyan
+Write-Host "Starting Userward Local build 2026.10.24.1" -ForegroundColor Cyan
 # Port 3001: dedicated to Userward. Port 3000 is reserved for AI agent RPA tools (Next.js).
 $UserwardPort = 3001
 $userwardUrl = "http://127.0.0.1:$UserwardPort/"
@@ -65,7 +65,23 @@ function Test-NeedsBuild {
 $needsBuild = Test-NeedsBuild
 $alreadyHealthy = Test-UserwardHealthy
 
+function Start-AsiCompanion {
+  # Self-upgrade window talks to 127.0.0.1:3003 (not 3000/3001). Restart if stale.
+  $companionPort = 3003
+  $listening = $false
+  foreach ($line in (& netstat.exe -ano -p TCP 2>$null)) {
+    if ($line -match "127\.0\.0\.1:$companionPort\s+\S+\s+LISTENING") { $listening = $true; break }
+  }
+  if ($listening) {
+    Write-Host "Self-upgrade companion already on port $companionPort." -ForegroundColor DarkGray
+    return
+  }
+  Write-Host "Starting self-upgrade companion on http://127.0.0.1:$companionPort ..." -ForegroundColor Cyan
+  Start-Process -FilePath "npm.cmd" -ArgumentList @("run", "asi:companion") -WorkingDirectory (Get-Location).Path -WindowStyle Minimized
+}
+
 if ($alreadyHealthy -and -not $needsBuild) {
+  Start-AsiCompanion
   Write-Host "Userward is already running with an up-to-date build. Opening Microsoft Edge..." -ForegroundColor Green
   & (Join-Path $PSScriptRoot "open-userward.ps1")
   return
@@ -112,8 +128,10 @@ if ($needsBuild -or -not (Test-Path "dist\server\index.js")) {
 
 Write-Host "Userward is local-only: $userwardUrl" -ForegroundColor Green
 Write-Host "Port 3000 is reserved for AI agent RPA tools; Userward uses $UserwardPort." -ForegroundColor DarkGray
+Write-Host "Self-upgrade companion uses port 3003." -ForegroundColor DarkGray
 Write-Host "Microsoft Edge will open automatically when the app is ready." -ForegroundColor Green
 Write-Host "Keep this window open while you use Userward. Closing it stops the server." -ForegroundColor Yellow
+Start-AsiCompanion
 $openerPath = Join-Path $PSScriptRoot "open-userward.ps1"
 Start-Process -FilePath powershell.exe -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $openerPath) -WindowStyle Hidden
 & npm.cmd run start:local
